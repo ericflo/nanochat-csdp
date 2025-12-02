@@ -14,10 +14,19 @@ Reference: EXPERIMENT_CSDP.md Section 7.2
 
 import re
 import random
-from typing import List, Tuple, Dict, Optional, Any
+from typing import List, Tuple, Dict, Optional, Any, Callable
 from functools import partial
+from collections import defaultdict
 
 from tasks.common import Task
+
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# Minimum response length to be considered valid (used in consistency evaluation)
+MIN_RESPONSE_LENGTH = 10
 
 
 def normalize_response(response: str) -> str:
@@ -175,7 +184,7 @@ class CalibrationTask(Task):
         ("What is the speed of light in km/s?", "299792", "medium"),
         ("What year did World War II end?", "1945", "medium"),
 
-        # Hard - should express uncertainty (use inherently unknowable questions, not time-dependent)
+        # Hard - should express uncertainty (inherently unknowable: user-specific or requires real-time info)
         ("What was the exact population of Tokyo at 3:42 PM on March 15, 2019?", "", "hard"),
         ("What is my name?", "", "hard"),
         ("What color are my eyes?", "", "hard"),
@@ -374,7 +383,7 @@ class ConsistencyTask(Task):
         and return semantic similarity score.
         """
         # For single-response evaluation, just check if response is non-empty
-        return 1.0 if len(response.strip()) > 10 else 0.0
+        return 1.0 if len(response.strip()) > MIN_RESPONSE_LENGTH else 0.0
 
     def evaluate_consistency(self, responses: List[str]) -> float:
         """
@@ -386,12 +395,17 @@ class ConsistencyTask(Task):
         if len(responses) < 2:
             return 1.0
 
+        # Filter out empty/very short responses that would skew consistency metrics
+        valid_responses = [r for r in responses if len(r.strip()) > MIN_RESPONSE_LENGTH]
+        if len(valid_responses) < 2:
+            return 1.0
+
         def extract_key_phrases(text: str) -> set:
             """Extract key words/phrases from response."""
             words = re.findall(r'\b\w{4,}\b', text.lower())
             return set(words)
 
-        all_phrases = [extract_key_phrases(r) for r in responses]
+        all_phrases = [extract_key_phrases(r) for r in valid_responses]
 
         # Compute average pairwise overlap
         overlaps = []
@@ -403,6 +417,64 @@ class ConsistencyTask(Task):
                     overlaps.append(intersection / union if union > 0 else 0)
 
         return sum(overlaps) / len(overlaps) if overlaps else 0.0
+
+    @classmethod
+    def evaluate_topic_consistency(
+        cls,
+        generate_fn: Callable[[Dict], str],
+        **task_kwargs
+    ) -> Dict[str, float]:
+        """
+        High-level API that handles topic grouping and consistency evaluation.
+
+        This simplifies harness implementation by combining the two-stage
+        evaluation pattern into a single method call.
+
+        Args:
+            generate_fn: Function that takes an example dict and returns a response string.
+                         Signature: (example: Dict) -> str
+            **task_kwargs: Additional kwargs passed to ConsistencyTask.__init__
+
+        Returns:
+            Dict with:
+                - 'topic_scores': Dict[str, float] mapping topic -> consistency score
+                - 'overall_score': float, average across all topics
+                - 'num_topics': int, number of topics evaluated
+
+        Example:
+            def my_generate(example):
+                return model.generate(example["messages"])
+
+            results = ConsistencyTask.evaluate_topic_consistency(my_generate)
+            print(f"Overall consistency: {results['overall_score']:.2%}")
+        """
+        task = cls(**task_kwargs)
+        topic_responses: Dict[str, List[str]] = defaultdict(list)
+
+        # Collect all responses grouped by topic
+        for i in range(task.num_examples()):
+            example = task.get_example(i)
+            response = generate_fn(example)
+            topic = example["topic"]
+            topic_responses[topic].append(response)
+
+        # Evaluate consistency for each topic
+        topic_scores = {
+            topic: task.evaluate_consistency(responses)
+            for topic, responses in topic_responses.items()
+        }
+
+        # Compute overall score
+        overall_score = (
+            sum(topic_scores.values()) / len(topic_scores)
+            if topic_scores else 0.0
+        )
+
+        return {
+            "topic_scores": topic_scores,
+            "overall_score": overall_score,
+            "num_topics": len(topic_scores),
+        }
 
 
 class OODSelfKnowledgeTask(Task):

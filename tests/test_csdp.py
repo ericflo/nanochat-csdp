@@ -629,3 +629,125 @@ class TestCurricula:
         heart_full = CURRICULA["heart"]["full_comprehension"]
         # BARE should be significantly shorter than HEART
         assert len(bare_full) < len(heart_full) / 2, "BARE should be much shorter than HEART"
+
+    def test_curriculum_token_length_bounds(self):
+        """
+        Curriculum content should not exceed reasonable token bounds.
+
+        This validates that no curriculum stage would overwhelm short documents
+        when combined with the max_csdp_ratio check. Assuming ~4 chars per token,
+        content under 4500 chars (~1125 tokens) is reasonable.
+
+        Note: Some curricula like NOVA's full_comprehension (~4000 chars) are
+        intentionally longer for philosophical depth. The max_csdp_ratio check
+        in the dataloader will skip CSDP for very short documents.
+        """
+        MAX_CHARS = 4500  # ~1125 tokens at 4 chars/token
+        for name, curriculum in CURRICULA.items():
+            for stage, content in curriculum.items():
+                assert len(content) < MAX_CHARS, (
+                    f"Curriculum {name} stage {stage} has {len(content)} chars "
+                    f"(>{MAX_CHARS}), may dominate short documents"
+                )
+
+    def test_full_comprehension_longest_stage(self):
+        """Full comprehension should generally be the longest stage."""
+        for name, curriculum in CURRICULA.items():
+            full = len(curriculum["full_comprehension"])
+            pre = len(curriculum["pre_comprehension"])
+            early = len(curriculum["early_comprehension"])
+            # Full should be at least as long as earlier stages
+            assert full >= pre, f"{name}: full should be >= pre"
+            assert full >= early, f"{name}: full should be >= early"
+
+
+class TestConstants:
+    """Tests for module-level constants."""
+
+    def test_min_csdp_probability_in_range(self):
+        """MIN_CSDP_PROBABILITY should be in valid range."""
+        from nanochat.csdp import MIN_CSDP_PROBABILITY
+        assert 0.0 < MIN_CSDP_PROBABILITY <= 1.0
+
+    def test_status_message_probability_is_small(self):
+        """STATUS_MESSAGE_PROBABILITY should be a small value."""
+        from nanochat.csdp import STATUS_MESSAGE_PROBABILITY
+        assert 0.0 < STATUS_MESSAGE_PROBABILITY < 0.1
+
+    def test_graduation_phase_start_reasonable(self):
+        """GRADUATION_PHASE_START should be late in training."""
+        from nanochat.csdp import GRADUATION_PHASE_START
+        assert 0.8 <= GRADUATION_PHASE_START < 1.0
+
+    def test_code_patterns_precompiled(self):
+        """CODE_PATTERNS should be pre-compiled regex objects."""
+        from nanochat.csdp import CODE_PATTERNS
+        import re
+        for pattern in CODE_PATTERNS:
+            assert isinstance(pattern, re.Pattern), "CODE_PATTERNS should be compiled"
+
+    def test_min_response_length_constant(self):
+        """MIN_RESPONSE_LENGTH should be defined in csdp_metrics."""
+        from tasks.csdp_metrics import MIN_RESPONSE_LENGTH
+        assert MIN_RESPONSE_LENGTH > 0
+        assert MIN_RESPONSE_LENGTH == 10  # Document expected value
+
+
+class TestConsistencyTaskHighLevelAPI:
+    """Tests for ConsistencyTask.evaluate_topic_consistency() method."""
+
+    def test_evaluate_topic_consistency_basic(self):
+        """Basic test of high-level consistency API."""
+        from tasks.csdp_metrics import ConsistencyTask
+
+        # Mock generate function that returns consistent responses
+        def consistent_generate(example):
+            topic = example["topic"]
+            if topic == "identity":
+                return "I am an AI language model trained on text data."
+            elif topic == "memory":
+                return "I don't have persistent memory between sessions."
+            else:
+                return "I have various capabilities and limitations."
+
+        results = ConsistencyTask.evaluate_topic_consistency(consistent_generate)
+
+        assert "topic_scores" in results
+        assert "overall_score" in results
+        assert "num_topics" in results
+        assert results["num_topics"] > 0
+        # Consistent responses should have high score
+        assert results["overall_score"] > 0.3
+
+    def test_evaluate_topic_consistency_inconsistent(self):
+        """Inconsistent responses should have lower scores."""
+        from tasks.csdp_metrics import ConsistencyTask
+
+        # Counter to generate unique words for each response
+        call_count = [0]
+
+        def inconsistent_generate(example):
+            # Generate completely unique words for each response to ensure no overlap
+            call_count[0] += 1
+            base = call_count[0] * 100
+            unique_words = [f"uniqueword{base + i}" for i in range(20)]
+            return " ".join(unique_words)
+
+        results = ConsistencyTask.evaluate_topic_consistency(inconsistent_generate)
+
+        assert results["num_topics"] > 0
+        # Completely non-overlapping responses should have very low consistency
+        assert results["overall_score"] < 0.1
+
+    def test_evaluate_topic_consistency_returns_all_topics(self):
+        """Should return scores for all topics."""
+        from tasks.csdp_metrics import ConsistencyTask
+
+        def simple_generate(example):
+            return "This is a valid response with enough words."
+
+        results = ConsistencyTask.evaluate_topic_consistency(simple_generate)
+
+        # Should have scores for all topics in QUESTION_SETS
+        expected_topics = {"identity", "memory", "capabilities", "limitations", "uncertainty"}
+        assert set(results["topic_scores"].keys()) == expected_topics

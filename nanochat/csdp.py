@@ -21,6 +21,49 @@ from typing import Optional, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# Minimum CSDP probability during graduation phase (keeps some exposure)
+MIN_CSDP_PROBABILITY = 0.05
+
+# Probability of including status message during early training (format familiarization)
+STATUS_MESSAGE_PROBABILITY = 0.02
+
+# Graduation phase threshold (90% of training)
+GRADUATION_PHASE_START = 0.90
+
+# Pre-compiled regex patterns for domain classification (improves performance)
+# Code detection patterns - require multiple matches to avoid false positives
+CODE_PATTERNS = [
+    re.compile(r'^\s*def\s+\w+\s*\(', re.MULTILINE),           # Python function
+    re.compile(r'^\s*class\s+\w+[:\(]', re.MULTILINE),         # Python/Java class
+    re.compile(r'(?:^|;)\s*import\s+[\w.]+', re.MULTILINE),    # Import statement
+    re.compile(r'^\s*from\s+[\w.]+\s+import\s+', re.MULTILINE), # Python from-import
+    re.compile(r'function\s+\w+\s*\(', re.MULTILINE),          # JavaScript function
+    re.compile(r'^\s*#include\s*[<"]', re.MULTILINE),          # C/C++ include
+    re.compile(r'=>\s*{', re.MULTILINE),                        # Arrow function
+    re.compile(r'\)\s*{\s*$', re.MULTILINE),                    # Function body opening
+    re.compile(r'^\s*(?:public|private|protected)\s+(?:static\s+)?(?:void|int|String|bool)', re.MULTILINE),
+    re.compile(r'^\s*(?:const|let|var)\s+\w+\s*=', re.MULTILINE),  # JS variable
+]
+
+# Other domain detection patterns (pre-compiled for performance)
+ACADEMIC_PATTERN = re.compile(
+    r'(et al\.|Abstract|doi:|arXiv|References\s*\n|methodology|hypothesis)',
+    re.IGNORECASE
+)
+NEWS_PATTERN = re.compile(
+    r'(reported|according to|officials said|breaking:|update:)',
+    re.IGNORECASE
+)
+CREATIVE_PATTERN = re.compile(r'(".*said|whispered|shouted|thought|felt|dreamed)')
+CONVERSATIONAL_PATTERN = re.compile(
+    r'(lol|btw|gonna|wanna|hey |omg|idk)',
+    re.IGNORECASE
+)
+
 
 @dataclass
 class StageBoundaries:
@@ -121,14 +164,14 @@ def get_stage(step: int, total_steps: int,
 
 
 def get_csdp_probability(step: int, total_steps: int,
-                         anneal_start: float = 0.90,
+                         anneal_start: float = GRADUATION_PHASE_START,
                          anneal_end: float = 0.98) -> float:
     """
     Get probability of including CSDP in this batch (for graduation annealing).
 
     - Steps 0 to 90%: Always include CSDP (p=1.0)
-    - Steps 90% to 98%: Linear decay from 1.0 to 0.05
-    - Steps 98% to 100%: Minimal CSDP (p=0.05)
+    - Steps 90% to 98%: Linear decay from 1.0 to MIN_CSDP_PROBABILITY
+    - Steps 98% to 100%: Minimal CSDP (p=MIN_CSDP_PROBABILITY)
 
     Args:
         step: Current training step
@@ -147,11 +190,11 @@ def get_csdp_probability(step: int, total_steps: int,
     if progress < anneal_start:
         return 1.0
     elif progress < anneal_end:
-        # Linear decay from 1.0 to 0.05
+        # Linear decay from 1.0 to MIN_CSDP_PROBABILITY
         anneal_progress = (progress - anneal_start) / (anneal_end - anneal_start)
-        return 1.0 - (0.95 * anneal_progress)
+        return 1.0 - ((1.0 - MIN_CSDP_PROBABILITY) * anneal_progress)
     else:
-        return 0.05  # 5% chance, keeps some exposure
+        return MIN_CSDP_PROBABILITY
 
 
 # =============================================================================
@@ -210,31 +253,11 @@ def classify_domain(text: str, metadata: Optional[Dict] = None,
     # Simple heuristics based on content patterns
     sample = text[:1000] if len(text) > 1000 else text
 
-    # Code detection - use more specific patterns to avoid false positives
-    # - Require 'def ' followed by identifier and parentheses (Python function)
-    # - Require 'class ' followed by identifier (Python/Java/etc class)
-    # - Require 'import ' at line start or after semicolon (not "The import of goods")
-    # - Function declarations with specific syntax
-    # - #include with angle brackets or quotes (C/C++)
-    # - Multiple code-specific characters together (braces, semicolons, arrows)
-    code_patterns = [
-        r'^\s*def\s+\w+\s*\(',           # Python function definition
-        r'^\s*class\s+\w+[:\(]',          # Python/Java class definition
-        r'(?:^|;)\s*import\s+[\w.]+',     # Import statement at line start or after semicolon
-        r'^\s*from\s+[\w.]+\s+import\s+', # Python from-import
-        r'function\s+\w+\s*\(',           # JavaScript function
-        r'^\s*#include\s*[<"]',           # C/C++ include
-        r'=>\s*{',                         # Arrow function with block
-        r'\)\s*{\s*$',                     # Function body opening (end of line)
-        r'^\s*(?:public|private|protected)\s+(?:static\s+)?(?:void|int|String|bool)', # Java/C# method
-        r'^\s*(?:const|let|var)\s+\w+\s*=', # JavaScript variable declaration
-    ]
+    # Code detection using pre-compiled patterns (see CODE_PATTERNS at module level)
     # Require multiple patterns to match to reduce false positives from
     # prose that discusses code (e.g., "The import of goods..." would match
     # one pattern but not be actual code)
-    code_pattern_matches = sum(
-        1 for p in code_patterns if re.search(p, sample, re.MULTILINE)
-    )
+    code_pattern_matches = sum(1 for p in CODE_PATTERNS if p.search(sample))
     if code_pattern_matches >= min_code_patterns:
         return "code"
     elif code_pattern_matches > 0:
@@ -244,20 +267,20 @@ def classify_domain(text: str, metadata: Optional[Dict] = None,
             f"below threshold ({min_code_patterns}), not classifying as code"
         )
 
-    # Academic detection
-    if re.search(r'(et al\.|Abstract|doi:|arXiv|References\s*\n|methodology|hypothesis)', sample, re.IGNORECASE):
+    # Academic detection using pre-compiled pattern
+    if ACADEMIC_PATTERN.search(sample):
         return "academic"
 
-    # News detection
-    if re.search(r'(reported|according to|officials said|breaking:|update:)', sample, re.IGNORECASE):
+    # News detection using pre-compiled pattern
+    if NEWS_PATTERN.search(sample):
         return "news"
 
-    # Creative detection
-    if re.search(r'(".*said|whispered|shouted|thought|felt|dreamed)', sample):
+    # Creative detection using pre-compiled pattern
+    if CREATIVE_PATTERN.search(sample):
         return "creative"
 
-    # Conversational detection
-    if re.search(r'(lol|btw|gonna|wanna|hey |omg|idk)', sample, re.IGNORECASE):
+    # Conversational detection using pre-compiled pattern
+    if CONVERSATIONAL_PATTERN.search(sample):
         return "conversational"
 
     return "general"
@@ -983,12 +1006,12 @@ def get_csdp_block(step: int, total_steps: int, curriculum: str,
     # Handle graduation phase (90%+ of training)
     progress = step / total_steps if total_steps > 0 else 0
 
-    if include_graduation and progress >= 0.90:
+    if include_graduation and progress >= GRADUATION_PHASE_START:
         # Add graduation message
         graduation_msg = CURRICULA[curriculum].get("graduation", "")
         if graduation_msg:
             content = content + "\n\n" + graduation_msg
-    elif include_graduation and _random.random() < 0.02:
+    elif include_graduation and _random.random() < STATUS_MESSAGE_PROBABILITY:
         # Early training: occasionally include status message (format familiarization)
         content = content + "\n\n" + STATUS_MESSAGE
 

@@ -99,10 +99,35 @@ weights = [0.1] * csdp_token_count + [1.0] * training_token_count
 
 ### Special Boundary Tokens
 
-Clear boundaries demarcate CSDP content:
+Clear boundaries demarcate CSDP content from training text. The tokenized sequence structure is:
+
 ```
-[BOS] [<|csdp_start|>] [CSDP content] [<|csdp_end|>] [training text]
+[BOS] <|csdp_start|> [CSDP curriculum content...] <|csdp_end|> [training document text...]
 ```
+
+**Example tokenized sequence:**
+```python
+# Token IDs (illustrative)
+[1,        # BOS
+ 50256,    # <|csdp_start|> - signals CSDP context begins
+ # ... CSDP curriculum tokens (e.g., "You are a language model...")
+ 50257,    # <|csdp_end|> - signals transition to training content
+ # ... training document tokens
+]
+
+# Corresponding loss weights
+[0.1,      # BOS: reduced weight
+ 0.1,      # <|csdp_start|>: reduced weight
+ # ... 0.1 for all CSDP content tokens
+ 0.1,      # <|csdp_end|>: reduced weight (marks transition)
+ # ... 1.0 for all training document tokens
+]
+```
+
+This structure enables:
+1. **Attention analysis**: Study how the model attends to CSDP vs training tokens
+2. **Precise loss weighting**: Apply reduced weight only to CSDP tokens
+3. **Clear context switching**: Model learns to recognize content transitions
 
 ### Domain-Adaptive Context
 
