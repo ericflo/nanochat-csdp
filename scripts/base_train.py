@@ -187,6 +187,7 @@ if use_csdp:
         use_domain_context=bool(csdp_use_domain),
         enable_graduation=bool(csdp_graduation),
         total_steps=num_iterations,
+        seed=42,  # Deterministic CSDP injection
     )
     curriculum_info = get_curriculum_info(csdp_curriculum)
     print0(f"CSDP enabled: {curriculum_info['name']} - {curriculum_info['description']}")

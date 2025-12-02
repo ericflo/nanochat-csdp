@@ -148,11 +148,13 @@ def compute_init(device_type="cuda"): # cuda|cpu|mps
         assert torch.backends.mps.is_available(), "Your PyTorch installation is not configured for MPS but device_type is 'mps'"
 
     # Reproducibility
-    # Note that we set the global seeds here, but most of the code uses explicit rng objects.
-    # The only place where global rng might be used is nn.Module initialization of the model weights.
+    # Seed all random number generators for reproducibility
+    import random
+    random.seed(42)
     torch.manual_seed(42)
     if device_type == "cuda":
         torch.cuda.manual_seed(42)
+        torch.cuda.manual_seed_all(42)  # For multi-GPU
     # skipping full reproducibility for now, possibly investigate slowdown later
     # torch.use_deterministic_algorithms(True)
 

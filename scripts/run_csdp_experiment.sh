@@ -119,6 +119,87 @@ else
     uv sync --extra gpu
     source .venv/bin/activate
 
+    # =========================================================================
+    # PRE-FLIGHT CHECKS - Catch issues before wasting hours of training
+    # =========================================================================
+    echo ""
+    echo "=============================================="
+    echo "Running pre-flight checks..."
+    echo "=============================================="
+
+    # Check 1: Verify all required packages are importable
+    python -c "
+import sys
+errors = []
+
+# Check core packages
+try:
+    import torch
+    print(f'  [OK] torch {torch.__version__}')
+    if torch.cuda.is_available():
+        print(f'  [OK] CUDA available: {torch.cuda.device_count()} GPUs')
+    else:
+        errors.append('CUDA not available')
+except ImportError as e:
+    errors.append(f'torch: {e}')
+
+try:
+    import datasets
+    print(f'  [OK] datasets {datasets.__version__}')
+except ImportError as e:
+    errors.append(f'datasets: {e}')
+
+try:
+    import hf_transfer
+    print(f'  [OK] hf_transfer available')
+except ImportError as e:
+    errors.append(f'hf_transfer: {e}')
+
+try:
+    import wandb
+    print(f'  [OK] wandb {wandb.__version__}')
+except ImportError as e:
+    errors.append(f'wandb: {e}')
+
+# Check nanochat modules
+try:
+    from nanochat.csdp import CSDPConfig, get_curriculum_info
+    print('  [OK] nanochat.csdp')
+except ImportError as e:
+    errors.append(f'nanochat.csdp: {e}')
+
+try:
+    from tasks.smoltalk import SmolTalk
+    print('  [OK] tasks.smoltalk')
+except ImportError as e:
+    errors.append(f'tasks.smoltalk: {e}')
+
+if errors:
+    print('')
+    print('PRE-FLIGHT CHECK FAILED:')
+    for err in errors:
+        print(f'  [FAIL] {err}')
+    sys.exit(1)
+
+print('')
+print('All pre-flight checks passed!')
+"
+
+    # Check 2: Pre-download HuggingFace datasets to avoid mid-training failures
+    echo ""
+    echo "Pre-downloading HuggingFace datasets..."
+    python -c "
+from datasets import load_dataset
+print('  Downloading SmolTalk...')
+ds = load_dataset('HuggingFaceTB/smol-smoltalk', split='train')
+print(f'  [OK] SmolTalk: {len(ds)} rows')
+"
+
+    echo ""
+    echo "=============================================="
+    echo "Pre-flight checks complete!"
+    echo "=============================================="
+
     # Install Rust and build tokenizer
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     source "$HOME/.cargo/env"
