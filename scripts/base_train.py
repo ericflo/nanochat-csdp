@@ -21,12 +21,14 @@ import torch
 
 from nanochat.gpt import GPT, GPTConfig
 from nanochat.dataloader import tokenizing_distributed_data_loader, tokenizing_distributed_data_loader_with_state
+from nanochat.dataloader import csdp_tokenizing_data_loader_with_state
 from nanochat.common import compute_init, compute_cleanup, print0, DummyWandb, print_banner, get_base_dir, autodetect_device_type
 from nanochat.tokenizer import get_tokenizer, get_token_bytes
 from nanochat.checkpoint_manager import save_checkpoint, load_checkpoint
 from nanochat.loss_eval import evaluate_bpb
 from nanochat.engine import Engine
 from scripts.base_eval import evaluate_model
+from nanochat.csdp import CSDPConfig, get_curriculum_info
 print_banner()
 
 # -----------------------------------------------------------------------------
@@ -62,6 +64,11 @@ sample_every = 2000 # every how many steps to sample from the model
 save_every = -1 # every how many steps to save model checkpoints (-1 = disable, and save only at the end of the run)
 # Output
 model_tag = "" # optionally override the model tag for the output checkpoint directory name
+# CSDP (Contextual Scaffolding During Pretraining) settings
+csdp_curriculum = "none"  # none|aria|sage|nova|heart|bare - which curriculum to use
+csdp_loss_weight = 0.1    # Weight for CSDP tokens in loss (0.0=full mask, 1.0=full loss)
+csdp_use_domain = 1       # Enable domain-adaptive context (1=True, 0=False)
+csdp_graduation = 1       # Enable graduation annealing (1=True, 0=False)
 # now allow CLI to override the settings via the configurator lol
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open(os.path.join('nanochat', 'configurator.py')).read()) # overrides from command line or config file
@@ -169,9 +176,40 @@ if resuming:
 # Initialize the DataLoaders for train/val
 tokens_dir = os.path.join(base_dir, "tokenized_data")
 dataloader_resume_state_dict = None if not resuming else meta_data["dataloader_state_dict"]
-train_loader = tokenizing_distributed_data_loader_with_state(device_batch_size, max_seq_len, split="train", device=device, resume_state_dict=dataloader_resume_state_dict)
+
+# CSDP: Create config if curriculum is specified
+use_csdp = csdp_curriculum != "none"
+csdp_config = None
+if use_csdp:
+    csdp_config = CSDPConfig(
+        curriculum=csdp_curriculum,
+        loss_weight=csdp_loss_weight,
+        use_domain_context=bool(csdp_use_domain),
+        enable_graduation=bool(csdp_graduation),
+        total_steps=num_iterations,
+    )
+    curriculum_info = get_curriculum_info(csdp_curriculum)
+    print0(f"CSDP enabled: {curriculum_info['name']} - {curriculum_info['description']}")
+    print0(f"CSDP loss weight: {csdp_loss_weight}, domain context: {bool(csdp_use_domain)}, graduation: {bool(csdp_graduation)}")
+
+# Use CSDP dataloader if curriculum is enabled, otherwise standard dataloader
+if use_csdp:
+    train_loader = csdp_tokenizing_data_loader_with_state(
+        device_batch_size, max_seq_len, split="train",
+        csdp_config=csdp_config, device=device,
+        resume_state_dict=dataloader_resume_state_dict
+    )
+    x, y, loss_weights, dataloader_state_dict, csdp_info = next(train_loader)
+else:
+    train_loader = tokenizing_distributed_data_loader_with_state(
+        device_batch_size, max_seq_len, split="train",
+        device=device, resume_state_dict=dataloader_resume_state_dict
+    )
+    x, y, dataloader_state_dict = next(train_loader)
+    loss_weights = None
+    csdp_info = None
+
 build_val_loader = lambda: tokenizing_distributed_data_loader(device_batch_size, max_seq_len, split="val", device=device)
-x, y, dataloader_state_dict = next(train_loader) # kick off load of the very first batch of data
 
 # -----------------------------------------------------------------------------
 # Set up hyperparameter schedulers
@@ -305,11 +343,16 @@ while True:
     t0 = time.time()
     for micro_step in range(grad_accum_steps):
         with autocast_ctx:
-            loss = model(x, y)
+            loss = model(x, y, loss_weights=loss_weights)
         train_loss = loss.detach() # for logging
         loss = loss / grad_accum_steps # each .backward() is a grad sum => normalize loss here
         loss.backward()
-        x, y, dataloader_state_dict = next(train_loader) # prefetch the next batch while the GPU is busy with forward/backward
+        # prefetch the next batch while the GPU is busy with forward/backward
+        if use_csdp:
+            x, y, loss_weights, dataloader_state_dict, csdp_info = next(train_loader)
+        else:
+            x, y, dataloader_state_dict = next(train_loader)
+            loss_weights = None
     # gradient clipping
     grad_clip_enabled = grad_clip > 0.0
     if grad_clip_enabled:
@@ -357,6 +400,9 @@ while True:
         }
         if grad_clip_enabled:
             log_data["train/grad_norm"] = grad_norm
+        if use_csdp and csdp_info:
+            log_data["csdp/stage"] = csdp_info.get("stage", "")
+            log_data["csdp/curriculum"] = csdp_info.get("curriculum", "")
         wandb_run.log(log_data)
 
     # state update
@@ -369,6 +415,14 @@ print0(f"Minimum validation bpb: {min_val_bpb:.4f}")
 
 # Log to report
 from nanochat.report import get_report
+csdp_report_info = {}
+if use_csdp:
+    csdp_report_info = {
+        "CSDP Curriculum": csdp_curriculum,
+        "CSDP Loss Weight": csdp_loss_weight,
+        "CSDP Domain Context": bool(csdp_use_domain),
+        "CSDP Graduation": bool(csdp_graduation),
+    }
 get_report().log(section="Base model training", data=[
     user_config, # CLI args
     { # stats about the training setup
@@ -381,6 +435,7 @@ get_report().log(section="Base model training", data=[
         "warmup_ratio": warmup_ratio,
         "warmdown_ratio": warmdown_ratio,
         "final_lr_frac": final_lr_frac,
+        **csdp_report_info,
     },
     { # stats about training outcomes
         "Minimum validation bpb": min_val_bpb,

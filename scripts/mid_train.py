@@ -48,6 +48,8 @@ eval_every = 150 # -1 = disable
 eval_tokens = 20*524288
 total_batch_size = 524288
 dry_run = 0 # dry_run=1 is for experiments: we will log to wandb but we won't write checkpoints or report
+# CSDP (Contextual Scaffolding During Pretraining) settings
+csdp_curriculum = "none"  # none|aria|sage|nova|heart|bare - which curriculum to use
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open(os.path.join('nanochat', 'configurator.py')).read()) # overrides from command line or config file
 user_config = {k: globals()[k] for k in config_keys} # possibly useful for logging
@@ -109,6 +111,11 @@ val_dataset = TaskMixture([
     MMLU(subset="all", split="test", stop=5200), # 14K rows in test set, use only 5.2K to match the train ratios
     GSM8K(subset="main", split="test", stop=420), # 1.32K rows in test set, use only 420 to match the train ratios
 ]) # total: 24K + 14K + 1.32K ~= 39K rows
+# CSDP imports (if enabled)
+import copy
+if csdp_curriculum != "none":
+    from nanochat.csdp import get_midtrain_preamble, inject_csdp_into_conversation
+
 # DataLoader is defined here, it emits inputs, targets : 2D tensors of shape (device_batch_size, max_seq_len)
 # A big problem is that we don't know the final num_iterations in advance. So we create
 # these two global variables and update them from within the data generator.
@@ -126,10 +133,23 @@ def mid_data_generator(split):
     scratch = torch.empty(needed_tokens, dtype=torch.int64, pin_memory=(device_type == "cuda"))
     cursor = ddp_rank # increments by ddp_world_size each time, so each rank processes unique documents
     it = 0 # iteration counter
+
+    # CSDP: Get preamble if enabled
+    csdp_preamble = None
+    if csdp_curriculum != "none":
+        csdp_preamble = get_midtrain_preamble(csdp_curriculum)
+        if master_process and it == 0:
+            print(f"CSDP midtraining preamble ({csdp_curriculum}): {csdp_preamble[:100]}...")
+
     while True:
         # Accumulate enough tokens for one iteration before yielding
         while len(token_buffer) < needed_tokens:
             conversation = dataset[cursor]
+
+            # CSDP: Inject preamble as system message
+            if csdp_preamble:
+                conversation = inject_csdp_into_conversation(conversation, csdp_preamble)
+
             ids, _ = tokenizer.render_conversation(conversation)
             token_buffer.extend(ids)
             cursor += ddp_world_size
@@ -295,11 +315,15 @@ print0(f"Minimum validation bpb: {min_val_bpb:.4f}")
 # Log to report
 if not dry_run:
     from nanochat.report import get_report
+    csdp_report_info = {}
+    if csdp_curriculum != "none":
+        csdp_report_info = {"CSDP Curriculum": csdp_curriculum}
     get_report().log(section="Midtraining", data=[
         user_config, # CLI args
         { # stats about the training setup
             "Number of iterations": step,
             "DDP world size": ddp_world_size,
+            **csdp_report_info,
         },
         { # stats about training outcomes
             "Minimum validation bpb": min_val_bpb,

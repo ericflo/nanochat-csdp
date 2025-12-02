@@ -241,7 +241,7 @@ class GPT(nn.Module):
                 group["initial_lr"] = group["lr"]
         return optimizers
 
-    def forward(self, idx, targets=None, kv_cache=None, loss_reduction='mean'):
+    def forward(self, idx, targets=None, kv_cache=None, loss_reduction='mean', loss_weights=None):
         B, T = idx.size()
 
         # Grab the rotary embeddings for the current sequence length (they are of shape (1, seq_len, 1, head_dim/2))
@@ -267,7 +267,37 @@ class GPT(nn.Module):
             logits = self.lm_head(x)
             logits = softcap * torch.tanh(logits / softcap) # logits softcap
             logits = logits.float() # use tf32/fp32 for logits
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1, reduction=loss_reduction)
+
+            if loss_weights is not None:
+                # CSDP: Per-token weighted loss for contextual scaffolding
+                # loss_weights has shape (B, T) with values 0.0-1.0
+                loss_per_token = F.cross_entropy(
+                    logits.view(-1, logits.size(-1)),
+                    targets.view(-1),
+                    ignore_index=-1,
+                    reduction='none'
+                )
+                loss_per_token = loss_per_token.view(B, T)
+                loss_weights = loss_weights.view(B, T)
+                # Mask for valid tokens (not ignore_index)
+                valid_mask = (targets != -1).float()
+                # Apply weights and compute weighted mean
+                weighted_loss = loss_per_token * loss_weights * valid_mask
+                if loss_reduction == 'mean':
+                    # Weighted mean: sum(loss * weight) / sum(weight) for valid tokens
+                    total_weight = (loss_weights * valid_mask).sum()
+                    # Guard against very small total_weight which could cause loss explosion.
+                    # This can happen if all tokens are masked (ignore_index=-1) or all weights are ~0.
+                    # Minimum threshold of 1.0 ensures loss stays bounded. If total_weight < 1.0,
+                    # we effectively return a smaller loss, which is safer than an exploding loss.
+                    total_weight = torch.clamp(total_weight, min=1.0)
+                    loss = weighted_loss.sum() / total_weight
+                elif loss_reduction == 'none':
+                    loss = weighted_loss
+                else:
+                    loss = weighted_loss.sum()
+            else:
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1, reduction=loss_reduction)
             return loss
         else:
             # inference mode: compute and return the logits

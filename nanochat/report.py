@@ -192,6 +192,7 @@ def slugify(text):
 
 # the expected files and their order
 EXPECTED_FILES = [
+    "csdp-configuration.md",  # CSDP config if present
     "tokenizer-training.md",
     "tokenizer-evaluation.md",
     "base-model-training.md",
@@ -201,11 +202,16 @@ EXPECTED_FILES = [
     "chat-evaluation-mid.md",
     "chat-sft.md",
     "chat-evaluation-sft.md",
+    "csdp-evaluation-(sft).md",  # CSDP evaluation results
+    "csdp-evaluation-(mid).md",
     "chat-rl.md",
     "chat-evaluation-rl.md",
 ]
 # the metrics we're currently interested in
 chat_metrics = ["ARC-Easy", "ARC-Challenge", "MMLU", "GSM8K", "HumanEval", "ChatCORE"]
+# CSDP-specific metrics
+csdp_metrics = ["SelfKnowledge", "Calibration", "Consistency", "OODSelfKnowledge",
+                "SocialEngineering", "ToneLeakage", "CSDP_Score"]
 
 def extract(section, keys):
     """simple def to extract a single key from a section"""
@@ -308,11 +314,33 @@ class Report:
                     final_metrics["sft"] = extract(section, chat_metrics)
                 if file_name == "chat-evaluation-rl.md":
                     final_metrics["rl"] = extract(section, "GSM8K") # RL only evals GSM8K
+                # CSDP-specific metrics
+                if file_name == "csdp-evaluation-(sft).md":
+                    csdp_sft = extract(section, csdp_metrics)
+                    if "sft" not in final_metrics:
+                        final_metrics["sft"] = {}
+                    final_metrics["sft"].update(csdp_sft)
+                if file_name == "csdp-evaluation-(mid).md":
+                    csdp_mid = extract(section, csdp_metrics)
+                    if "mid" not in final_metrics:
+                        final_metrics["mid"] = {}
+                    final_metrics["mid"].update(csdp_mid)
+                if file_name == "csdp-configuration.md":
+                    csdp_config = extract(section, ["Curriculum", "Loss Weight"])
+                    final_metrics["csdp_config"] = csdp_config
                 # append this section of the report
                 out_file.write(section)
                 out_file.write("\n")
             # add the final metrics table
             out_file.write("## Summary\n\n")
+
+            # Add CSDP configuration if present
+            if "csdp_config" in final_metrics and final_metrics["csdp_config"]:
+                out_file.write("### CSDP Configuration\n")
+                for key, value in final_metrics["csdp_config"].items():
+                    out_file.write(f"- {key}: {value}\n")
+                out_file.write("\n")
+
             # Copy over the bloat metrics from the header
             out_file.write(bloat_data)
             out_file.write("\n\n")
