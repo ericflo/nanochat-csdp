@@ -95,7 +95,10 @@ esac
 # Environment setup
 
 export OMP_NUM_THREADS=1
-export NANOCHAT_BASE_DIR="$HOME/.cache/nanochat-csdp/$CURRICULUM"
+# Use existing NANOCHAT_BASE_DIR if set, otherwise default to curriculum-specific directory
+if [ -z "${NANOCHAT_BASE_DIR:-}" ]; then
+    export NANOCHAT_BASE_DIR="$HOME/.cache/nanochat-csdp/$CURRICULUM"
+fi
 mkdir -p $NANOCHAT_BASE_DIR
 
 # Log run info
@@ -121,7 +124,7 @@ source .venv/bin/activate
 # -----------------------------------------------------------------------------
 # wandb setup
 
-if [ -z "$WANDB_RUN" ]; then
+if [ -z "${WANDB_RUN:-}" ]; then
     WANDB_RUN="${CURRICULUM}_${RUN_NAME}"
 fi
 export WANDB_PROJECT="nanochat-csdp"
@@ -175,7 +178,7 @@ fi
 # -----------------------------------------------------------------------------
 # Number of GPUs
 
-NPROC_PER_NODE=8
+NPROC_PER_NODE=4
 
 # -----------------------------------------------------------------------------
 # Base model pretraining WITH CSDP

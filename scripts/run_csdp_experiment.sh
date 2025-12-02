@@ -19,12 +19,12 @@
 # Estimated runtime: ~24 hours on 8xH100 (6 runs x 4 hours each)
 # Estimated cost: ~$600 at $3/GPU/hour
 
-set -e  # Exit on error
+set -eo pipefail  # Exit on error, pipeline failures
 
 # -----------------------------------------------------------------------------
 # Parse arguments
 
-CURRICULA_STR="none,aria,sage,nova,heart,bare"
+CURRICULA_STR="aria,sage,nova,heart,bare,none"
 SKIP_TO=""
 DRY_RUN="0"
 PARALLEL="0"
@@ -82,11 +82,17 @@ echo "Output dir:  $EXPERIMENT_DIR"
 echo "Log file:    $LOG_FILE"
 echo "=============================================="
 
-# Write experiment metadata
+# Write experiment metadata (handle missing jq gracefully)
+if command -v jq &> /dev/null; then
+    CURRICULA_JSON=$(printf '%s\n' "${CURRICULA[@]}" | jq -R . | jq -s .)
+else
+    # Fallback: manually format JSON array
+    CURRICULA_JSON="[$(printf '"%s",' "${CURRICULA[@]}" | sed 's/,$//')]"
+fi
 cat > "${EXPERIMENT_DIR}/experiment_config.json" << EOF
 {
     "timestamp": "$TIMESTAMP",
-    "curricula": $(printf '%s\n' "${CURRICULA[@]}" | jq -R . | jq -s .),
+    "curricula": $CURRICULA_JSON,
     "skip_to": "$SKIP_TO",
     "project_dir": "$PROJECT_DIR",
     "experiment_dir": "$EXPERIMENT_DIR"
@@ -123,10 +129,12 @@ else
     python -m scripts.tok_train --max_chars=2000000000
     python -m scripts.tok_eval
 
-    # Copy tokenizer to shared location
-    SHARED_TOKENIZER_DIR="${EXPERIMENT_DIR}/shared/tokenizer"
-    mkdir -p "$SHARED_TOKENIZER_DIR"
-    cp -r "$NANOCHAT_BASE_DIR/tokenizer/"* "$SHARED_TOKENIZER_DIR/" 2>/dev/null || true
+    # Verify tokenizer was created successfully
+    if [ ! -f "$NANOCHAT_BASE_DIR/tokenizer/tokenizer.pkl" ]; then
+        echo "ERROR: Tokenizer training failed - tokenizer.pkl not found"
+        exit 1
+    fi
+    echo "Shared tokenizer ready at: $NANOCHAT_BASE_DIR/tokenizer"
 fi
 
 # -----------------------------------------------------------------------------
@@ -158,9 +166,22 @@ run_curriculum() {
     export NANOCHAT_BASE_DIR="$curriculum_dir"
     mkdir -p "$NANOCHAT_BASE_DIR"
 
-    # Copy shared tokenizer
+    # Copy shared tokenizer (with verification)
     mkdir -p "$NANOCHAT_BASE_DIR/tokenizer"
-    cp -r "${EXPERIMENT_DIR}/shared/tokenizer/"* "$NANOCHAT_BASE_DIR/tokenizer/" 2>/dev/null || true
+    if [ ! -f "${EXPERIMENT_DIR}/shared/tokenizer/tokenizer.pkl" ]; then
+        echo "ERROR: Shared tokenizer not found at ${EXPERIMENT_DIR}/shared/tokenizer/tokenizer.pkl"
+        echo "Tokenizer training may have failed. Cannot continue."
+        return 1
+    fi
+    cp -r "${EXPERIMENT_DIR}/shared/tokenizer/"* "$NANOCHAT_BASE_DIR/tokenizer/"
+
+    # Symlink shared base_data (large dataset - don't copy)
+    if [ ! -d "${EXPERIMENT_DIR}/shared/base_data" ]; then
+        echo "ERROR: Shared base_data not found at ${EXPERIMENT_DIR}/shared/base_data"
+        echo "Data download may have failed. Cannot continue."
+        return 1
+    fi
+    ln -sfn "${EXPERIMENT_DIR}/shared/base_data" "$NANOCHAT_BASE_DIR/base_data"
 
     # Run the curriculum
     local start_time=$(date +%s)
