@@ -42,6 +42,9 @@ CSDP_USE_DOMAIN="1"
 CSDP_GRADUATION="1"
 SKIP_TOKENIZER="0"
 SKIP_PRETRAIN="0"
+# Initialize DATASET_DOWNLOAD_PID so cleanup trap can safely check it
+# even if script fails before the background download is started
+DATASET_DOWNLOAD_PID=""
 
 for arg in "$@"; do
     case $arg in

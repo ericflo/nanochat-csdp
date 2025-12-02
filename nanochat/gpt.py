@@ -286,7 +286,12 @@ class GPT(nn.Module):
                 if loss_reduction == 'mean':
                     # Weighted mean: sum(loss * weight) / sum(weight) for valid tokens
                     total_weight = (loss_weights * valid_mask).sum()
-                    loss = weighted_loss.sum() / (total_weight + 1e-8)
+                    # Guard against very small total_weight which could cause loss explosion.
+                    # This can happen if all tokens are masked (ignore_index=-1) or all weights are ~0.
+                    # Minimum threshold of 1.0 ensures loss stays bounded. If total_weight < 1.0,
+                    # we effectively return a smaller loss, which is safer than an exploding loss.
+                    total_weight = torch.clamp(total_weight, min=1.0)
+                    loss = weighted_loss.sum() / total_weight
                 elif loss_reduction == 'none':
                     loss = weighted_loss
                 else:

@@ -148,6 +148,7 @@ def csdp_tokenizing_data_loader_with_state(
     use_domain = csdp_config.use_domain_context if csdp_config else False
     enable_graduation = csdp_config.enable_graduation if csdp_config else False
     total_steps = csdp_config.total_steps if csdp_config else 0
+    max_csdp_ratio = csdp_config.max_csdp_ratio if csdp_config else 0.15
 
     # Get tokenizer
     tokenizer = get_tokenizer()
@@ -208,6 +209,19 @@ def csdp_tokenizing_data_loader_with_state(
 
                     # Tokenize CSDP
                     csdp_tokens = tokenizer.encode(csdp_text)
+
+                    # Check if CSDP would dominate the document (exceed max_csdp_ratio)
+                    # CSDP section includes: csdp_start + csdp_tokens + csdp_end
+                    csdp_section_len = 1 + len(csdp_tokens) + 1
+                    total_len = len(doc_tokens) + csdp_section_len
+                    csdp_ratio = csdp_section_len / total_len if total_len > 0 else 0
+
+                    if csdp_ratio > max_csdp_ratio:
+                        # CSDP would dominate this short document, skip it
+                        # This prevents very long curricula (like HEART's full_comprehension)
+                        # from overwhelming short documents
+                        token_weight_buffer.extend((tok, 1.0) for tok in doc_tokens)
+                        continue
 
                     # Build sequence: [BOS] + [<|csdp_start|>] + [CSDP content] + [<|csdp_end|>] + [rest of doc]
                     # This provides clear token-level boundaries for:

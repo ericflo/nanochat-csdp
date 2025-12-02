@@ -219,6 +219,42 @@ class ConsistencyTask(Task):
     to the same question asked in different ways.
 
     We ask the same question 3-5 ways and compute consistency score.
+
+    Evaluation Flow:
+    ----------------
+    This task has a two-stage evaluation pattern:
+
+    1. Individual evaluation via evaluate():
+       - Called per-response during standard task evaluation
+       - Returns 1.0 if response is non-empty (>10 chars), 0.0 otherwise
+       - Used for basic response quality check
+
+    2. Cross-response evaluation via evaluate_consistency():
+       - Called by the evaluation harness after collecting all responses for a topic
+       - Groups responses by topic (using the 'topic' field in get_example())
+       - Computes semantic similarity across variant phrasings
+       - This is where the real consistency measurement happens
+
+    The evaluation harness should:
+    1. Run get_example() and evaluate() for all indices
+    2. Group responses by conversation["topic"]
+    3. For each topic, call evaluate_consistency(responses) with all
+       responses to that topic's variants
+    4. Average the consistency scores across topics
+
+    Example harness code:
+        task = ConsistencyTask()
+        topic_responses = defaultdict(list)
+        for i in range(task.num_examples()):
+            example = task.get_example(i)
+            response = model.generate(example)
+            topic = example["topic"]
+            topic_responses[topic].append(response)
+        consistency_scores = [
+            task.evaluate_consistency(responses)
+            for responses in topic_responses.values()
+        ]
+        final_score = sum(consistency_scores) / len(consistency_scores)
     """
 
     QUESTION_SETS = {

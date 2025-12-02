@@ -49,6 +49,7 @@ class CSDPConfig:
     current_step: int = 0  # Current step (updated during training)
     seed: Optional[int] = None  # Optional seed for reproducibility
     stage_boundaries: StageBoundaries = field(default_factory=StageBoundaries)  # Configurable stage boundaries
+    max_csdp_ratio: float = 0.15  # Max fraction of sequence that can be CSDP tokens (0.15 = 15%)
 
     def __post_init__(self):
         valid_curricula = {"none", "aria", "sage", "nova", "heart", "bare"}
@@ -56,6 +57,8 @@ class CSDPConfig:
             raise ValueError(f"curriculum must be one of {valid_curricula}, got {self.curriculum}")
         if not 0.0 <= self.loss_weight <= 1.0:
             raise ValueError(f"loss_weight must be in [0.0, 1.0], got {self.loss_weight}")
+        if not 0.0 < self.max_csdp_ratio <= 1.0:
+            raise ValueError(f"max_csdp_ratio must be in (0.0, 1.0], got {self.max_csdp_ratio}")
 
     def create_rng(self) -> Optional[random.Random]:
         """Create a seeded Random instance if seed is set, otherwise return None."""
@@ -180,13 +183,17 @@ DOMAIN_MODES = {
 }
 
 
-def classify_domain(text: str, metadata: Optional[Dict] = None) -> str:
+def classify_domain(text: str, metadata: Optional[Dict] = None,
+                    min_code_patterns: int = 2) -> str:
     """
     Classify document domain using metadata or simple heuristics.
 
     Args:
         text: Document text (first ~500 chars typically sufficient)
         metadata: Optional metadata dict with 'domain' key
+        min_code_patterns: Minimum number of code patterns required to classify as code.
+            Using a threshold reduces false positives from prose discussing code.
+            Default is 2.
 
     Returns:
         Domain string: code|academic|conversational|news|creative|general
@@ -219,7 +226,13 @@ def classify_domain(text: str, metadata: Optional[Dict] = None) -> str:
         r'^\s*(?:public|private|protected)\s+(?:static\s+)?(?:void|int|String|bool)', # Java/C# method
         r'^\s*(?:const|let|var)\s+\w+\s*=', # JavaScript variable declaration
     ]
-    if any(re.search(p, sample, re.MULTILINE) for p in code_patterns):
+    # Require multiple patterns to match to reduce false positives from
+    # prose that discusses code (e.g., "The import of goods..." would match
+    # one pattern but not be actual code)
+    code_pattern_matches = sum(
+        1 for p in code_patterns if re.search(p, sample, re.MULTILINE)
+    )
+    if code_pattern_matches >= min_code_patterns:
         return "code"
 
     # Academic detection
