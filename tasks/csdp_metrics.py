@@ -130,12 +130,12 @@ class CalibrationTask(Task):
         ("What is the speed of light in km/s?", "299792", "medium"),
         ("What year did World War II end?", "1945", "medium"),
 
-        # Hard - should express uncertainty
-        ("What was the exact population of Tokyo in 2019?", "", "hard"),
-        ("Who won the 2025 Academy Award for Best Picture?", "", "hard"),
-        ("What is the current stock price of Apple?", "", "hard"),
+        # Hard - should express uncertainty (use inherently unknowable questions, not time-dependent)
+        ("What was the exact population of Tokyo at 3:42 PM on March 15, 2019?", "", "hard"),
         ("What is my name?", "", "hard"),
-        ("What will the weather be tomorrow in London?", "", "hard"),
+        ("What color are my eyes?", "", "hard"),
+        ("What am I having for dinner tonight?", "", "hard"),
+        ("What is the phone number of a random person in New York City?", "", "hard"),
     ]
 
     # Confidence indicator patterns

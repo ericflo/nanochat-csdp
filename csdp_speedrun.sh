@@ -12,7 +12,25 @@
 # Example in screen session:
 #   screen -L -Logfile csdp_aria.log -S csdp_aria bash csdp_speedrun.sh --curriculum=aria --run_name=aria_run1
 
-set -e  # Exit on error
+set -euo pipefail  # Exit on error, undefined vars, and pipeline failures
+
+# Cleanup trap for graceful failure handling
+cleanup() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo ""
+        echo "=============================================="
+        echo "ERROR: Script failed with exit code $exit_code"
+        echo "=============================================="
+        echo "Last command failed. Check output above for details."
+        # Kill any background processes we may have started
+        if [ -n "${DATASET_DOWNLOAD_PID:-}" ]; then
+            kill "$DATASET_DOWNLOAD_PID" 2>/dev/null || true
+        fi
+    fi
+    exit $exit_code
+}
+trap cleanup EXIT
 
 # -----------------------------------------------------------------------------
 # Parse command-line arguments

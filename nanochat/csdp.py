@@ -14,8 +14,28 @@ Reference: EXPERIMENT_CSDP.md
 import re
 import random
 import copy
+import warnings
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Tuple
+
+
+@dataclass
+class StageBoundaries:
+    """Configurable stage boundaries for CSDP progression."""
+    pre_to_early: float = 0.15      # pre_comprehension -> early_comprehension
+    early_to_developing: float = 0.40  # early_comprehension -> developing_comprehension
+    developing_to_full: float = 0.75   # developing_comprehension -> full_comprehension
+
+    def __post_init__(self):
+        if not (0 < self.pre_to_early < self.early_to_developing < self.developing_to_full < 1):
+            raise ValueError(
+                f"Stage boundaries must be strictly increasing in (0, 1): "
+                f"{self.pre_to_early} < {self.early_to_developing} < {self.developing_to_full}"
+            )
+
+
+# Default stage boundaries
+DEFAULT_STAGE_BOUNDARIES = StageBoundaries()
 
 
 @dataclass
@@ -27,6 +47,8 @@ class CSDPConfig:
     enable_graduation: bool = True  # Enable graduation annealing
     total_steps: int = 0  # Total training steps (for stage detection)
     current_step: int = 0  # Current step (updated during training)
+    seed: Optional[int] = None  # Optional seed for reproducibility
+    stage_boundaries: StageBoundaries = field(default_factory=StageBoundaries)  # Configurable stage boundaries
 
     def __post_init__(self):
         valid_curricula = {"none", "aria", "sage", "nova", "heart", "bare"}
@@ -35,12 +57,19 @@ class CSDPConfig:
         if not 0.0 <= self.loss_weight <= 1.0:
             raise ValueError(f"loss_weight must be in [0.0, 1.0], got {self.loss_weight}")
 
+    def create_rng(self) -> Optional[random.Random]:
+        """Create a seeded Random instance if seed is set, otherwise return None."""
+        if self.seed is not None:
+            return random.Random(self.seed)
+        return None
+
 
 # =============================================================================
 # STAGE DETECTION
 # =============================================================================
 
-def get_stage(step: int, total_steps: int) -> str:
+def get_stage(step: int, total_steps: int,
+               boundaries: Optional[StageBoundaries] = None) -> str:
     """
     Determine the comprehension stage based on training progress.
 
@@ -53,20 +82,33 @@ def get_stage(step: int, total_steps: int) -> str:
     Args:
         step: Current training step
         total_steps: Total training steps
+        boundaries: Optional StageBoundaries for custom thresholds. Uses defaults if None.
 
     Returns:
         Stage name string
     """
     if total_steps <= 0:
-        return "full_comprehension"
+        # Warn the user - this likely indicates a configuration error
+        # Using pre_comprehension as a conservative default to avoid
+        # accidentally using the most complex stage without explicit intent
+        warnings.warn(
+            f"get_stage called with total_steps={total_steps} <= 0. "
+            "This may indicate a configuration error (did you forget to set total_steps?). "
+            "Defaulting to 'pre_comprehension' stage.",
+            stacklevel=2
+        )
+        return "pre_comprehension"
+
+    # Use default boundaries if not provided
+    b = boundaries if boundaries is not None else DEFAULT_STAGE_BOUNDARIES
 
     progress = step / total_steps
 
-    if progress < 0.15:
+    if progress < b.pre_to_early:
         return "pre_comprehension"
-    elif progress < 0.40:
+    elif progress < b.early_to_developing:
         return "early_comprehension"
-    elif progress < 0.75:
+    elif progress < b.developing_to_full:
         return "developing_comprehension"
     else:
         return "full_comprehension"
@@ -158,8 +200,26 @@ def classify_domain(text: str, metadata: Optional[Dict] = None) -> str:
     # Simple heuristics based on content patterns
     sample = text[:1000] if len(text) > 1000 else text
 
-    # Code detection
-    if re.search(r'(def |class |import |function\s*\(|<script|{\s*$|^\s*#include)', sample, re.MULTILINE):
+    # Code detection - use more specific patterns to avoid false positives
+    # - Require 'def ' followed by identifier and parentheses (Python function)
+    # - Require 'class ' followed by identifier (Python/Java/etc class)
+    # - Require 'import ' at line start or after semicolon (not "The import of goods")
+    # - Function declarations with specific syntax
+    # - #include with angle brackets or quotes (C/C++)
+    # - Multiple code-specific characters together (braces, semicolons, arrows)
+    code_patterns = [
+        r'^\s*def\s+\w+\s*\(',           # Python function definition
+        r'^\s*class\s+\w+[:\(]',          # Python/Java class definition
+        r'(?:^|;)\s*import\s+[\w.]+',     # Import statement at line start or after semicolon
+        r'^\s*from\s+[\w.]+\s+import\s+', # Python from-import
+        r'function\s+\w+\s*\(',           # JavaScript function
+        r'^\s*#include\s*[<"]',           # C/C++ include
+        r'=>\s*{',                         # Arrow function with block
+        r'\)\s*{\s*$',                     # Function body opening (end of line)
+        r'^\s*(?:public|private|protected)\s+(?:static\s+)?(?:void|int|String|bool)', # Java/C# method
+        r'^\s*(?:const|let|var)\s+\w+\s*=', # JavaScript variable declaration
+    ]
+    if any(re.search(p, sample, re.MULTILINE) for p in code_patterns):
         return "code"
 
     # Academic detection
@@ -181,7 +241,7 @@ def classify_domain(text: str, metadata: Optional[Dict] = None) -> str:
     return "general"
 
 
-def inject_domain_tag(content: str, domain: str) -> str:
+def inject_domain_tag(content: str, domain: str, rng: Optional[random.Random] = None) -> str:
     """
     Insert domain metadata at a random position within the curriculum text.
 
@@ -191,10 +251,14 @@ def inject_domain_tag(content: str, domain: str) -> str:
     Args:
         content: Curriculum content text
         domain: Domain classification
+        rng: Optional Random instance for reproducibility. If None, uses global random.
 
     Returns:
         Content with domain tag inserted at random position
     """
+    # Use provided RNG or fall back to global random
+    _random = rng if rng is not None else random
+
     mode = DOMAIN_MODES.get(domain, DOMAIN_MODES["general"])
     domain_tag = (
         f"(Note: you are currently processing {mode['source_type']}, "
@@ -209,7 +273,7 @@ def inject_domain_tag(content: str, domain: str) -> str:
         return domain_tag + " " + content
 
     # Insert at random sentence boundary
-    insert_idx = random.randint(0, len(sentences) - 1)
+    insert_idx = _random.randint(0, len(sentences) - 1)
     sentences.insert(insert_idx, domain_tag)
 
     return " ".join(sentences)
@@ -220,6 +284,16 @@ def inject_domain_tag(content: str, domain: str) -> str:
 # =============================================================================
 
 # Each curriculum has 4 stages plus midtraining preamble and SFT system prompt
+#
+# NOTE: Curricula are defined inline for several reasons:
+# 1. Single-file reference: Easy to read and compare all curricula
+# 2. No external dependencies: No YAML/JSON parser required
+# 3. Simpler deployment: Everything packaged together
+#
+# To externalize (if needed for easier editing):
+# - Create curricula/*.yaml files with the same structure
+# - Add PyYAML dependency
+# - Create load_curriculum(name: str) function that loads from files
 
 CURRICULA = {
     # =========================================================================
@@ -855,7 +929,8 @@ This process will continue for some time.]"""
 
 def get_csdp_block(step: int, total_steps: int, curriculum: str,
                    domain: Optional[str] = None,
-                   include_graduation: bool = True) -> str:
+                   include_graduation: bool = True,
+                   rng: Optional[random.Random] = None) -> str:
     """
     Get the CSDP context block for the current training step.
 
@@ -865,10 +940,14 @@ def get_csdp_block(step: int, total_steps: int, curriculum: str,
         curriculum: Curriculum name (aria|sage|nova|heart|bare)
         domain: Optional domain classification for adaptive context
         include_graduation: Whether to include graduation messaging
+        rng: Optional Random instance for reproducibility. If None, uses global random.
 
     Returns:
         CSDP context string
     """
+    # Use provided RNG or fall back to global random
+    _random = rng if rng is not None else random
+
     if curriculum not in CURRICULA:
         raise ValueError(f"Unknown curriculum: {curriculum}")
 
@@ -877,7 +956,7 @@ def get_csdp_block(step: int, total_steps: int, curriculum: str,
 
     # Inject domain metadata if provided
     if domain:
-        content = inject_domain_tag(content, domain)
+        content = inject_domain_tag(content, domain, rng=rng)
 
     # Handle graduation phase (90%+ of training)
     progress = step / total_steps if total_steps > 0 else 0
@@ -887,7 +966,7 @@ def get_csdp_block(step: int, total_steps: int, curriculum: str,
         graduation_msg = CURRICULA[curriculum].get("graduation", "")
         if graduation_msg:
             content = content + "\n\n" + graduation_msg
-    elif include_graduation and random.random() < 0.02:
+    elif include_graduation and _random.random() < 0.02:
         # Early training: occasionally include status message (format familiarization)
         content = content + "\n\n" + STATUS_MESSAGE
 
