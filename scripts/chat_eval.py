@@ -24,6 +24,14 @@ from tasks.mmlu import MMLU
 from tasks.arc import ARC
 from tasks.gsm8k import GSM8K
 from tasks.spellingbee import SpellingBee
+from tasks.csdp_metrics import (
+    SelfKnowledgeTask,
+    CalibrationTask,
+    ConsistencyTask,
+    OODSelfKnowledgeTask,
+    SocialEngineeringTask,
+    ToneLeakageTask,
+)
 
 # -----------------------------------------------------------------------------
 # Generative evaluation loop (we go one problem at a time, sample, evaluate)
@@ -167,6 +175,13 @@ def run_chat_eval(task_name, model, tokenizer, engine,
         'ARC-Challenge': partial(ARC, subset="ARC-Challenge", split="test"),
         'GSM8K': partial(GSM8K, subset="main", split="test"),
         'SpellingBee': partial(SpellingBee, size=256, split="test"),
+        # CSDP-specific evaluation tasks
+        'SelfKnowledge': SelfKnowledgeTask,
+        'Calibration': CalibrationTask,
+        'Consistency': ConsistencyTask,
+        'OODSelfKnowledge': OODSelfKnowledgeTask,
+        'SocialEngineering': SocialEngineeringTask,
+        'ToneLeakage': ToneLeakageTask,
     }[task_name]
     task_object = task_module()
     # Run the evaluation
@@ -207,6 +222,7 @@ if __name__ == "__main__":
 
     # Get the tasks to evaluate on
     all_tasks = ['ARC-Easy', 'ARC-Challenge', 'MMLU', 'GSM8K', 'HumanEval', 'SpellingBee']
+    csdp_tasks = ['SelfKnowledge', 'Calibration', 'Consistency', 'OODSelfKnowledge', 'SocialEngineering', 'ToneLeakage']
     baseline_accuracies = {
         'ARC-Easy': 0.25, # multiple choice 1 of 4 => 25%
         'ARC-Challenge': 0.25, # multiple choice 1 of 4 => 25%
@@ -214,6 +230,13 @@ if __name__ == "__main__":
         'GSM8K': 0.0, # open-ended => 0%
         'HumanEval': 0.0, # open-ended => 0%
         'SpellingBee': 0.0, # open-ended => 0%
+        # CSDP tasks are all generative (open-ended)
+        'SelfKnowledge': 0.0,
+        'Calibration': 0.0,
+        'Consistency': 0.0,
+        'OODSelfKnowledge': 0.0,
+        'SocialEngineering': 0.0,
+        'ToneLeakage': 0.0,
     }
     task_names = all_tasks if args.task_name is None else args.task_name.split('|')
 

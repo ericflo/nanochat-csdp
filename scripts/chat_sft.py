@@ -55,6 +55,8 @@ eval_every = 100
 eval_steps = 100
 eval_metrics_every = 200
 eval_metrics_max_problems = 1024
+# CSDP (Contextual Scaffolding During Pretraining) settings
+csdp_curriculum = "none"  # none|aria|sage|nova|heart|bare - which curriculum to use
 # now allow CLI to override the settings via the configurator lol
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open(os.path.join('nanochat', 'configurator.py')).read()) # overrides from command line or config file
@@ -95,6 +97,14 @@ val_ds = SmolTalk(split="test") # general conversations, 24K rows (though we don
 # -----------------------------------------------------------------------------
 # DataLoader
 
+# CSDP imports and setup (if enabled)
+csdp_system_prompt = None
+if csdp_curriculum != "none":
+    from nanochat.csdp import get_sft_system_prompt, inject_csdp_into_conversation
+    csdp_system_prompt = get_sft_system_prompt(csdp_curriculum)
+    if ddp_rank == 0:
+        print(f"CSDP SFT system prompt ({csdp_curriculum}): {csdp_system_prompt[:100]}...")
+
 def sft_data_generator(dataset, batch_size):
     pad_token_id = tokenizer.encode_special("<|assistant_end|>") # use <|assistant_end|> as the pad token is ok, these positions are masked in the loss
     # prepares a list of tokenized conversations into a batch and yields
@@ -121,6 +131,11 @@ def sft_data_generator(dataset, batch_size):
     while True:
         for i in range(ddp_rank, len(dataset), ddp_world_size):
             doc = dataset[i]
+
+            # CSDP: Inject system prompt if enabled
+            if csdp_system_prompt:
+                doc = inject_csdp_into_conversation(doc, csdp_system_prompt)
+
             ids, mask = tokenizer.render_conversation(doc)
             batch.append((ids, mask))
             if len(batch) == batch_size:
@@ -270,6 +285,9 @@ if master_process:
 
 # Log to report
 from nanochat.report import get_report
+csdp_report_info = {}
+if csdp_curriculum != "none":
+    csdp_report_info = {"CSDP Curriculum": csdp_curriculum}
 get_report().log(section="Chat SFT", data=[
     user_config, # CLI args
     {
@@ -277,6 +295,7 @@ get_report().log(section="Chat SFT", data=[
         "Number of iterations": num_iterations,
         "Training loss": train_loss_item,
         "Validation loss": val_loss,
+        **csdp_report_info,
     },
 ])
 

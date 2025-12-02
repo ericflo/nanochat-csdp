@@ -22,6 +22,9 @@ SPECIAL_TOKENS = [
     "<|python_end|>",
     "<|output_start|>", # python REPL outputs back to assistant
     "<|output_end|>",
+    # CSDP (Contextual Scaffolding During Pretraining) tokens
+    "<|csdp_start|>", # marks beginning of CSDP context (optional, for analysis)
+    "<|csdp_end|>",   # marks end of CSDP context, transition to training content
 ]
 
 # NOTE: this split pattern deviates from GPT-4 in that we use \p{N}{1,2} instead of \p{N}{1,3}
