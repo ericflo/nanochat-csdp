@@ -17,9 +17,22 @@ import copy
 import logging
 import warnings
 from dataclasses import dataclass, field
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Literal
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# TYPE DEFINITIONS
+# =============================================================================
+
+# Domain types for classify_domain()
+DomainType = Literal["code", "academic", "conversational", "news", "creative", "general"]
+
+# Stage types for get_stage()
+StageType = Literal["pre_comprehension", "early_comprehension", "developing_comprehension", "full_comprehension"]
+
+# Curriculum types
+CurriculumType = Literal["none", "aria", "sage", "nova", "heart", "bare"]
 
 # =============================================================================
 # CONSTANTS
@@ -87,7 +100,7 @@ DEFAULT_STAGE_BOUNDARIES = StageBoundaries()
 @dataclass
 class CSDPConfig:
     """Configuration for CSDP during training."""
-    curriculum: str = "none"  # none|aria|sage|nova|heart|bare
+    curriculum: CurriculumType = "none"
     loss_weight: float = 0.1  # Weight for CSDP tokens (0.0=full mask, 1.0=full loss)
     use_domain_context: bool = True  # Enable domain-adaptive context
     enable_graduation: bool = True  # Enable graduation annealing
@@ -118,7 +131,7 @@ class CSDPConfig:
 # =============================================================================
 
 def get_stage(step: int, total_steps: int,
-               boundaries: Optional[StageBoundaries] = None) -> str:
+               boundaries: Optional[StageBoundaries] = None) -> StageType:
     """
     Determine the comprehension stage based on training progress.
 
@@ -230,7 +243,7 @@ DOMAIN_MODES = {
 
 
 def classify_domain(text: str, metadata: Optional[Dict] = None,
-                    min_code_patterns: int = 2) -> str:
+                    min_code_patterns: int = 2) -> DomainType:
     """
     Classify document domain using metadata or simple heuristics.
 
@@ -286,7 +299,7 @@ def classify_domain(text: str, metadata: Optional[Dict] = None,
     return "general"
 
 
-def inject_domain_tag(content: str, domain: str, rng: Optional[random.Random] = None) -> str:
+def inject_domain_tag(content: str, domain: DomainType, rng: Optional[random.Random] = None) -> str:
     """
     Insert domain metadata at a random position within the curriculum text.
 
@@ -972,8 +985,8 @@ This process will continue for some time.]"""
 # CSDP CONTENT GENERATION
 # =============================================================================
 
-def get_csdp_block(step: int, total_steps: int, curriculum: str,
-                   domain: Optional[str] = None,
+def get_csdp_block(step: int, total_steps: int, curriculum: CurriculumType,
+                   domain: Optional[DomainType] = None,
                    include_graduation: bool = True,
                    rng: Optional[random.Random] = None) -> str:
     """
@@ -1018,14 +1031,14 @@ def get_csdp_block(step: int, total_steps: int, curriculum: str,
     return content
 
 
-def get_midtrain_preamble(curriculum: str) -> str:
+def get_midtrain_preamble(curriculum: CurriculumType) -> str:
     """Get the midtraining preamble for a curriculum."""
     if curriculum not in CURRICULA:
         raise ValueError(f"Unknown curriculum: {curriculum}")
     return CURRICULA[curriculum]["midtrain_preamble"]
 
 
-def get_sft_system_prompt(curriculum: str) -> str:
+def get_sft_system_prompt(curriculum: CurriculumType) -> str:
     """Get the SFT system prompt for a curriculum."""
     if curriculum not in CURRICULA:
         raise ValueError(f"Unknown curriculum: {curriculum}")
