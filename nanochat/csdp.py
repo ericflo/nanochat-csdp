@@ -14,9 +14,12 @@ Reference: EXPERIMENT_CSDP.md
 import re
 import random
 import copy
+import logging
 import warnings
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -234,6 +237,12 @@ def classify_domain(text: str, metadata: Optional[Dict] = None,
     )
     if code_pattern_matches >= min_code_patterns:
         return "code"
+    elif code_pattern_matches > 0:
+        # Log when threshold prevented classification as code (useful for debugging)
+        logger.debug(
+            f"classify_domain: {code_pattern_matches} code pattern(s) found but "
+            f"below threshold ({min_code_patterns}), not classifying as code"
+        )
 
     # Academic detection
     if re.search(r'(et al\.|Abstract|doi:|arXiv|References\s*\n|methodology|hypothesis)', sample, re.IGNORECASE):

@@ -1,4 +1,5 @@
 from collections import deque
+import logging
 import random
 
 import torch
@@ -7,6 +8,8 @@ import pyarrow.parquet as pq
 from nanochat.common import get_dist_info
 from nanochat.dataset import list_parquet_files
 from nanochat.tokenizer import get_tokenizer
+
+logger = logging.getLogger(__name__)
 
 
 def _create_document_batch_generator(split, tokenizer_batch_size, resume_state_dict=None):
@@ -176,6 +179,13 @@ def csdp_tokenizing_data_loader_with_state(
     last_csdp_stage = ""
     last_csdp_token_count = 0
 
+    # CSDP injection rate tracking for experiment analysis
+    docs_total = 0
+    docs_with_csdp = 0
+    docs_skipped_ratio = 0  # Skipped due to max_csdp_ratio limit
+    docs_skipped_annealing = 0  # Skipped due to graduation annealing
+    log_interval = 1000  # Log stats every N documents
+
     while True:
         # Accumulate enough tokens for one batch
         while len(token_weight_buffer) < needed_tokens:
@@ -183,16 +193,23 @@ def csdp_tokenizing_data_loader_with_state(
 
             # Process each document
             for doc_text in doc_batch:
+                docs_total += 1
+
                 # Tokenize document with BOS
                 doc_tokens = tokenizer.encode(doc_text, prepend=bos_token)
 
                 # Determine if we should include CSDP for this document
                 # Use seeded RNG if available for reproducibility
                 rand_val = csdp_rng.random() if csdp_rng else random.random()
+                csdp_prob = get_csdp_probability(step_counter, total_steps)
                 include_csdp = (
                     curriculum != "none" and
-                    rand_val <= get_csdp_probability(step_counter, total_steps)
+                    rand_val <= csdp_prob
                 )
+
+                # Track if annealing caused skip
+                if curriculum != "none" and rand_val > csdp_prob:
+                    docs_skipped_annealing += 1
 
                 if include_csdp:
                     # Get CSDP content
@@ -220,8 +237,12 @@ def csdp_tokenizing_data_loader_with_state(
                         # CSDP would dominate this short document, skip it
                         # This prevents very long curricula (like HEART's full_comprehension)
                         # from overwhelming short documents
+                        docs_skipped_ratio += 1
                         token_weight_buffer.extend((tok, 1.0) for tok in doc_tokens)
                         continue
+
+                    # Successfully injecting CSDP
+                    docs_with_csdp += 1
 
                     # Build sequence: [BOS] + [<|csdp_start|>] + [CSDP content] + [<|csdp_end|>] + [rest of doc]
                     # This provides clear token-level boundaries for:
@@ -282,6 +303,11 @@ def csdp_tokenizing_data_loader_with_state(
             "csdp_step": step_counter
         }
 
+        # Calculate injection rate stats
+        injection_rate = docs_with_csdp / docs_total if docs_total > 0 else 0.0
+        skip_ratio_rate = docs_skipped_ratio / docs_total if docs_total > 0 else 0.0
+        skip_anneal_rate = docs_skipped_annealing / docs_total if docs_total > 0 else 0.0
+
         csdp_info = {
             "step": step_counter,
             "stage": last_csdp_stage,
@@ -289,7 +315,23 @@ def csdp_tokenizing_data_loader_with_state(
             "csdp_token_count": last_csdp_token_count,
             "curriculum": curriculum,
             "loss_weight": loss_weight,
+            # Injection rate stats for experiment analysis
+            "docs_total": docs_total,
+            "docs_with_csdp": docs_with_csdp,
+            "docs_skipped_ratio": docs_skipped_ratio,
+            "docs_skipped_annealing": docs_skipped_annealing,
+            "injection_rate": injection_rate,
         }
+
+        # Periodic logging of injection rate stats
+        if docs_total > 0 and docs_total % log_interval == 0:
+            logger.info(
+                f"CSDP injection stats (last {log_interval} docs): "
+                f"injected={injection_rate:.1%}, "
+                f"skipped_ratio={skip_ratio_rate:.1%}, "
+                f"skipped_annealing={skip_anneal_rate:.1%}, "
+                f"stage={last_csdp_stage}"
+            )
 
         step_counter += 1
 

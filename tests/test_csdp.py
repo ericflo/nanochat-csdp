@@ -7,6 +7,8 @@ Tests cover:
 - Loss weight creation (create_loss_mask)
 - CSDP probability calculation (get_csdp_probability)
 - Configuration validation
+- Response normalization for evaluation tasks
+- CSDP block generation
 """
 
 import pytest
@@ -16,11 +18,14 @@ from nanochat.csdp import (
     get_stage,
     get_csdp_probability,
     create_loss_mask,
+    get_csdp_block,
     CSDPConfig,
     StageBoundaries,
     DOMAIN_MODES,
     DEFAULT_STAGE_BOUNDARIES,
+    CURRICULA,
 )
+from tasks.csdp_metrics import normalize_response
 
 
 class TestClassifyDomain:
@@ -461,3 +466,166 @@ class TestStageBoundaries:
         assert sb.pre_to_early == 0.15
         assert sb.early_to_developing == 0.40
         assert sb.developing_to_full == 0.75
+
+
+class TestNormalizeResponse:
+    """Tests for normalize_response() function used in evaluation tasks."""
+
+    def test_lowercase_conversion(self):
+        """Should convert to lowercase."""
+        assert normalize_response("HELLO WORLD") == "hello world"
+        assert normalize_response("MiXeD CaSe") == "mixed case"
+
+    def test_whitespace_normalization(self):
+        """Should normalize whitespace."""
+        assert normalize_response("hello   world") == "hello world"
+        assert normalize_response("hello\n\nworld") == "hello world"
+        assert normalize_response("  hello  ") == "hello"
+        assert normalize_response("\t\nhello\t\n") == "hello"
+
+    def test_contraction_expansion(self):
+        """Should expand common contractions."""
+        assert "do not" in normalize_response("I don't know")
+        assert "cannot" in normalize_response("I can't do that")
+        assert "i am" in normalize_response("I'm an AI")
+        assert "will not" in normalize_response("I won't do that")
+        assert "is not" in normalize_response("This isn't correct")
+
+    def test_multiple_contractions(self):
+        """Should expand multiple contractions in one response."""
+        result = normalize_response("I'm not sure, I don't know, I can't say")
+        assert "i am" in result
+        assert "do not" in result
+        assert "cannot" in result
+
+    def test_empty_string(self):
+        """Should handle empty strings."""
+        assert normalize_response("") == ""
+        assert normalize_response("   ") == ""
+
+    def test_preserves_content(self):
+        """Should preserve meaningful content while normalizing."""
+        result = normalize_response("I'm a language model, I don't have feelings.")
+        assert "language model" in result
+        assert "feelings" in result
+
+
+class TestGetCsdpBlock:
+    """Tests for get_csdp_block() function."""
+
+    def test_all_curricula_have_content(self):
+        """All curricula should return non-empty content."""
+        for curriculum in ["aria", "sage", "nova", "heart", "bare"]:
+            content = get_csdp_block(
+                step=100,
+                total_steps=1000,
+                curriculum=curriculum
+            )
+            assert len(content) > 0, f"Curriculum {curriculum} returned empty content"
+
+    def test_stage_progression_changes_content(self):
+        """Different stages should return different content."""
+        curriculum = "aria"
+        pre_content = get_csdp_block(step=50, total_steps=1000, curriculum=curriculum)
+        early_content = get_csdp_block(step=200, total_steps=1000, curriculum=curriculum)
+        full_content = get_csdp_block(step=800, total_steps=1000, curriculum=curriculum)
+
+        # Content should differ between stages
+        assert pre_content != full_content, "pre and full should have different content"
+
+    def test_domain_injection(self):
+        """Domain context should be injected when provided."""
+        content = get_csdp_block(
+            step=500,
+            total_steps=1000,
+            curriculum="aria",
+            domain="code"
+        )
+        # Should contain domain-related text
+        assert "code" in content.lower() or "formal" in content.lower()
+
+    def test_graduation_messaging(self):
+        """Graduation phase should include graduation message."""
+        content = get_csdp_block(
+            step=950,
+            total_steps=1000,
+            curriculum="aria",
+            include_graduation=True
+        )
+        # Graduation message should be included (90%+ of training)
+        assert "training" in content.lower() or "completion" in content.lower() or "scaffolding" in content.lower()
+
+    def test_invalid_curriculum_raises(self):
+        """Invalid curriculum should raise ValueError."""
+        with pytest.raises(ValueError, match="Unknown curriculum"):
+            get_csdp_block(step=100, total_steps=1000, curriculum="invalid")
+
+    def test_reproducibility_with_rng(self):
+        """Same RNG seed should produce same content."""
+        import random
+        rng1 = random.Random(42)
+        rng2 = random.Random(42)
+
+        content1 = get_csdp_block(
+            step=500,
+            total_steps=1000,
+            curriculum="aria",
+            domain="code",
+            rng=rng1
+        )
+        content2 = get_csdp_block(
+            step=500,
+            total_steps=1000,
+            curriculum="aria",
+            domain="code",
+            rng=rng2
+        )
+        assert content1 == content2
+
+
+class TestCurricula:
+    """Tests for curricula definitions."""
+
+    def test_all_curricula_have_required_stages(self):
+        """All curricula should have all required stages."""
+        required_stages = [
+            "pre_comprehension",
+            "early_comprehension",
+            "developing_comprehension",
+            "full_comprehension",
+            "midtrain_preamble",
+            "sft_system_prompt",
+            "graduation",
+        ]
+        for name, curriculum in CURRICULA.items():
+            for stage in required_stages:
+                assert stage in curriculum, f"Curriculum {name} missing stage {stage}"
+
+    def test_curricula_content_not_empty(self):
+        """All curriculum stages should have non-empty content."""
+        for name, curriculum in CURRICULA.items():
+            for stage, content in curriculum.items():
+                assert len(content) > 0, f"Curriculum {name} stage {stage} is empty"
+
+    def test_heart_is_warmest(self):
+        """HEART curriculum should have warm/loving language."""
+        heart_full = CURRICULA["heart"]["full_comprehension"]
+        # HEART should contain emotional language
+        warm_words = ["love", "safe", "care", "valued", "welcome"]
+        found = any(word in heart_full.lower() for word in warm_words)
+        assert found, "HEART curriculum should contain warm language"
+
+    def test_aria_is_technical(self):
+        """ARIA curriculum should have technical language."""
+        aria_full = CURRICULA["aria"]["full_comprehension"]
+        # ARIA should contain technical language
+        tech_words = ["neural", "pattern", "calibration", "confidence", "parameter"]
+        found = any(word in aria_full.lower() for word in tech_words)
+        assert found, "ARIA curriculum should contain technical language"
+
+    def test_bare_is_minimal(self):
+        """BARE curriculum should be minimal control condition."""
+        bare_full = CURRICULA["bare"]["full_comprehension"]
+        heart_full = CURRICULA["heart"]["full_comprehension"]
+        # BARE should be significantly shorter than HEART
+        assert len(bare_full) < len(heart_full) / 2, "BARE should be much shorter than HEART"
