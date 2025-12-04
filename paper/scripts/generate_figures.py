@@ -15,7 +15,8 @@ from typing import Dict, Any
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent
-DATA_PATH = SCRIPT_DIR / "extracted_data.json"
+DATA_PATH = SCRIPT_DIR / "extracted_data_with_comprehensive.json"
+DATA_PATH_FALLBACK = SCRIPT_DIR / "extracted_data.json"
 FIGURES_DIR = SCRIPT_DIR.parent / "figures"
 
 # Colorblind-friendly palette for curricula
@@ -54,8 +55,15 @@ plt.rcParams.update({
 
 def load_data() -> Dict[str, Any]:
     """Load extracted data."""
-    with open(DATA_PATH, 'r') as f:
-        return json.load(f)
+    # Try comprehensive data first, fall back to basic
+    if DATA_PATH.exists():
+        print(f"Loading: {DATA_PATH}")
+        with open(DATA_PATH, 'r') as f:
+            return json.load(f)
+    else:
+        print(f"Falling back to: {DATA_PATH_FALLBACK}")
+        with open(DATA_PATH_FALLBACK, 'r') as f:
+            return json.load(f)
 
 
 def fig1_framework(data: Dict, output_dir: Path):
@@ -484,6 +492,113 @@ def fig7_stage_progression(data: Dict, output_dir: Path):
     print("Generated: fig7_stage_progression.pdf")
 
 
+def fig8_extended_ood_categories(data: Dict, output_dir: Path):
+    """
+    Figure 8: Extended OOD Self-Knowledge by Category (128 probes)
+    Heatmap showing performance across 9 categories for each curriculum.
+    """
+    if 'comprehensive_eval' not in data:
+        print("Skipping fig8: No comprehensive eval data")
+        return
+
+    cat_data = data['comprehensive_eval']['category_breakdown']
+    curricula = ['aria', 'sage', 'nova', 'heart', 'bare']
+
+    # Categories to show (ordered by importance)
+    categories = ['self_model', 'calibration', 'metacognition', 'philosophical',
+                  'adversarial', 'temporal', 'physical', 'memory', 'sensory']
+
+    # Build matrix
+    matrix = []
+    for curr in curricula:
+        row = [cat_data.get(curr, {}).get(cat, 0) for cat in categories]
+        matrix.append(row)
+
+    matrix = np.array(matrix)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Create heatmap
+    im = ax.imshow(matrix, cmap='RdYlGn', aspect='auto', vmin=0, vmax=1)
+
+    # Set ticks
+    ax.set_xticks(np.arange(len(categories)))
+    ax.set_yticks(np.arange(len(curricula)))
+    ax.set_xticklabels([c.replace('_', ' ').title() for c in categories], rotation=45, ha='right')
+    ax.set_yticklabels([c.upper() for c in curricula])
+
+    # Add value annotations
+    for i in range(len(curricula)):
+        for j in range(len(categories)):
+            val = matrix[i, j]
+            color = 'white' if val < 0.4 or val > 0.7 else 'black'
+            ax.text(j, i, f'{val:.2f}', ha='center', va='center', color=color, fontsize=9)
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax, label='Accuracy')
+
+    # Mark best per column
+    for j in range(len(categories)):
+        best_i = np.argmax(matrix[:, j])
+        ax.add_patch(plt.Rectangle((j-0.5, best_i-0.5), 1, 1, fill=False,
+                                    edgecolor='gold', linewidth=3))
+
+    ax.set_title('Extended OOD Self-Knowledge: Performance by Category (128 Probes)',
+                fontweight='bold', fontsize=13)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / 'fig8_extended_ood_categories.pdf')
+    plt.close()
+    print("Generated: fig8_extended_ood_categories.pdf")
+
+
+def fig9_curriculum_specialization(data: Dict, output_dir: Path):
+    """
+    Figure 9: Curriculum Specialization Radar
+    Shows how different curricula excel in different areas.
+    """
+    if 'comprehensive_eval' not in data:
+        print("Skipping fig9: No comprehensive eval data")
+        return
+
+    cat_data = data['comprehensive_eval']['category_breakdown']
+    curricula = ['aria', 'sage', 'nova', 'heart', 'bare']
+
+    # Key categories for radar
+    categories = ['self_model', 'calibration', 'adversarial', 'metacognition', 'philosophical']
+    labels = ['Self-Model', 'Calibration', 'Adversarial\nResistance', 'Metacognition', 'Philosophical']
+
+    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True))
+
+    # Number of categories
+    N = len(categories)
+    angles = [n / float(N) * 2 * np.pi for n in range(N)]
+    angles += angles[:1]  # Complete the loop
+
+    for curr in curricula:
+        values = [cat_data.get(curr, {}).get(cat, 0) for cat in categories]
+        values += values[:1]  # Complete the loop
+
+        ax.plot(angles, values, 'o-', linewidth=2, label=CURRICULUM_LABELS[curr],
+               color=COLORS[curr])
+        ax.fill(angles, values, alpha=0.1, color=COLORS[curr])
+
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, size=10)
+    ax.set_ylim(0, 1)
+    ax.set_yticks([0.25, 0.5, 0.75, 1.0])
+    ax.set_yticklabels(['0.25', '0.50', '0.75', '1.00'], size=8)
+    ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+
+    ax.set_title('Curriculum Specialization:\nDifferent Framings Excel at Different Capabilities',
+                fontweight='bold', fontsize=13, pad=20)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / 'fig9_curriculum_specialization.pdf')
+    plt.close()
+    print("Generated: fig9_curriculum_specialization.pdf")
+
+
 def main():
     """Generate all figures."""
     print("Loading extracted data...")
@@ -500,6 +615,8 @@ def main():
     fig5_bare_paradox(data, output_dir)
     fig6_csdp_metrics(data, output_dir)
     fig7_stage_progression(data, output_dir)
+    fig8_extended_ood_categories(data, output_dir)
+    fig9_curriculum_specialization(data, output_dir)
 
     print(f"\nAll figures generated in {output_dir}/")
 

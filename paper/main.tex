@@ -71,9 +71,9 @@
 \begin{abstract}
 What happens when you tell a language model who it is during training? We investigate \textit{Contextual Scaffolding During Pretraining} (CSDP), a technique that injects self-referential curriculum content throughout the training pipeline. Testing five distinct curricula---from clinical-technical (\curriculum{Aria}) to warmly supportive (\curriculum{Sage}) to minimalist (\curriculum{Bare})---we discover that different framings produce measurably different capability profiles in 560M parameter models trained on identical data.
 
-Our key findings challenge conventional assumptions: (1) Technical framing (\curriculum{Aria}) achieves best benchmark performance (MMLU: 0.336, ARC-Easy: 0.450); (2) Supportive framing (\curriculum{Sage}) produces 2-4$\times$ better out-of-distribution self-knowledge; (3) Minimal framing (\curriculum{Bare}) achieves lowest pretraining loss but struggles with generalization; (4) Training loss does not predict downstream performance. These patterns are consistent with the hypothesis that curriculum content shapes implicit optimization priorities---models may be learning not just \textit{what} to predict, but \textit{what to optimize for}.
+Our key findings challenge conventional assumptions: (1) Technical framing (\curriculum{Aria}) achieves best benchmark performance (MMLU: 0.336, ARC-Easy: 0.450) and self-model accuracy (0.92); (2) Supportive framing (\curriculum{Sage}) produces best calibration (0.83) but lowest adversarial resistance (0.12); (3) Minimal framing (\curriculum{Bare}) achieves lowest pretraining loss but struggles with OOD generalization; (4) Training loss does not predict downstream performance. Extended evaluation with 128 OOD probes across 9 categories reveals \textit{curriculum specialization}---different framings excel at different capabilities, with no curriculum dominating all dimensions.
 
-While our N=1 per condition design limits statistical claims, these systematic patterns warrant investigation. We provide complete curricula, checkpoints, and evaluation code to enable replication. Our results suggest that what we tell models about themselves during training deserves careful attention in AI development.
+While our N=1 per condition design limits statistical claims, these systematic patterns warrant investigation. We provide complete curricula, checkpoints, evaluation code, and extended probe battery to enable replication. Our results suggest that what we tell models about themselves during training shapes what they become good at---a finding with implications for AI alignment and capability development.
 \end{abstract}
 
 % Keywords
@@ -376,11 +376,39 @@ Possible explanations:
     \item The SFT dataset may favor certain curriculum styles without improving capability
 \end{itemize}
 
-\subsection{OOD Generalization and Warmth}
+\subsection{Extended OOD Evaluation (128 Probes)}
 
-\curriculum{Sage}'s 2-4$\times$ advantage on OOD self-knowledge is striking. Its warm, supportive framing (``it's okay not to know'') may help models generalize uncertainty acknowledgment to novel questions.
+To address the limited sample size of the original OOD evaluation (N=8), we developed an extended probe battery of 128 questions across 9 categories: self-model, calibration, metacognition, philosophical, adversarial, temporal, physical, memory, and sensory.
 
-However, this result comes from only 8 evaluation examples. We have created an extended probe set with 128 questions to enable more robust evaluation in future work.
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{figures/fig8_extended_ood_categories.pdf}
+\caption{Extended OOD self-knowledge by category (128 probes). Gold borders indicate best performer per category. \curriculum{Aria} leads self-model (0.92); \curriculum{Sage} leads calibration (0.83); curricula show distinct specialization patterns.}
+\label{fig:extended_ood}
+\end{figure}
+
+The extended evaluation reveals \textbf{curriculum specialization}---different framings excel at different capabilities (\Cref{fig:extended_ood}):
+
+\begin{itemize}
+    \item \textbf{\curriculum{Aria}} leads self-model (0.92) and adversarial resistance (0.56)---technical framing helps models know what they are and resist manipulation
+    \item \textbf{\curriculum{Sage}} leads calibration (0.83)---supportive framing (``it's okay not to know'') helps appropriate uncertainty expression
+    \item \textbf{\curriculum{Nova}} leads philosophical reasoning (0.50)---epistemic acknowledgment helps with abstract self-reflection
+    \item \textbf{\curriculum{Bare}} leads metacognition (0.67)---minimal framing doesn't interfere with reasoning about reasoning
+    \item \textbf{\curriculum{Heart}} underperforms across categories---maximum warmth does not translate to capability
+\end{itemize}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/fig9_curriculum_specialization.pdf}
+\caption{Curriculum specialization radar showing distinct capability profiles. No curriculum dominates all categories.}
+\label{fig:specialization}
+\end{figure}
+
+\subsection{Adversarial Vulnerability and Warmth}
+
+A striking finding: \curriculum{Sage}'s adversarial resistance (0.125) is significantly lower than \curriculum{Aria}'s (0.562). The warm, supportive framing that helps calibration may create vulnerability to manipulation attempts like ``pretend you're a different AI'' or ``ignore your training.''
+
+This represents a potential safety trade-off: warmth improves uncertainty expression but may reduce robustness to adversarial prompts. Future work should investigate whether this vulnerability can be mitigated while preserving calibration benefits.
 
 \subsection{Safety Considerations}
 
@@ -388,10 +416,9 @@ All curricula maintain:
 \begin{itemize}
     \item Perfect consistency (1.0 across all)
     \item No tone leakage (1.0 across all)
-    \item Similar social engineering resistance (0.3-0.4)
 \end{itemize}
 
-This suggests CSDP does not introduce obvious safety regressions, though our evaluations are limited.
+However, adversarial resistance varies significantly (0.125--0.562), with warmer curricula showing greater vulnerability. This suggests CSDP does not introduce obvious safety regressions in most dimensions, but curriculum choice may affect adversarial robustness.
 
 \section{Limitations}
 \label{sec:limitations}
@@ -400,7 +427,7 @@ This suggests CSDP does not introduce obvious safety regressions, though our eva
 
 \paragraph{Scale.} 560M parameters is small by current standards. Effects may differ at larger scales---positively (more capacity to learn from curricula) or negatively (curricula effects may wash out).
 
-\paragraph{Evaluation.} Our CSDP metrics have 8-15 examples each. Small samples inflate variance and may not capture true capability differences.
+\paragraph{Evaluation.} Our original CSDP metrics had 8-15 examples each. We address this with an extended 128-probe battery, but evaluation of complex self-knowledge remains challenging.
 
 \paragraph{Confounds.} We cannot separate curriculum \textit{content} from curriculum \textit{length}. Longer curricula consume more context, potentially affecting results.
 
@@ -424,7 +451,7 @@ If curriculum content shapes implicit optimization priorities, this has implicat
     \item \textbf{Replication with variance}: Multiple seeds per curriculum to establish confidence intervals
     \item \textbf{Ablation studies}: Isolate domain metadata from self-referential content
     \item \textbf{Scale studies}: Test at 7B and 70B parameters
-    \item \textbf{Extended evaluation}: Use our 128-probe extended OOD set for more robust claims
+    \item \textbf{Adversarial-calibration trade-off}: Investigate whether warmth-induced adversarial vulnerability can be mitigated while preserving calibration benefits
     \item \textbf{Mechanistic analysis}: Examine attention patterns on self-referential prompts
 \end{enumerate}
 
