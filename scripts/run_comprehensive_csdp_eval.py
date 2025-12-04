@@ -226,11 +226,7 @@ def evaluate_curriculum_stage(curriculum: str, stage: str,
         compute_cleanup()
         return None
 
-    # Check for depth subdirectory (e.g., d20, d32) - nanochat stores checkpoints there
-    depth_dirs = list(checkpoint_dir.glob("d*"))
-    if depth_dirs:
-        checkpoint_dir = depth_dirs[0]  # Use first depth dir found
-        print0(f"Found depth subdirectory: {checkpoint_dir.name}")
+    # Note: load_model_from_dir handles the d20/d32 subdirectory automatically
 
     # Load model
     print0(f"Loading model from {checkpoint_dir}...")
