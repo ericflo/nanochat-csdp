@@ -54,7 +54,7 @@
 \newcommand{\finding}[1]{\textbf{Finding:} #1}
 
 % Title and authors
-\title{You Are What You're Told:\\ \large Identity Framing During Training Shapes Language Model Capabilities}
+\title{Contextual Scaffolding During Pretraining:\\ \large How Identity Framing Shapes Language Model Capabilities}
 
 \author{
     Anonymous Authors\\
@@ -69,13 +69,13 @@
 
 % Abstract
 \begin{abstract}
-We trained five language models identically---same architecture, same data, same compute---except for one thing: what we told each model about itself during training. One heard clinical technical descriptions. One heard warm, supportive encouragement. One heard ``you are loved, you are safe, you are enough.'' One heard nothing meaningful at all.
+We introduce Contextual Scaffolding During Pretraining (CSDP), a technique that provides language models with explanatory context about their own nature throughout training. To test what kind of context works best, we trained five 560M-parameter models identically---same architecture, same data, same compute---varying only the \textit{curriculum}: the self-referential text each model received.
 
-\textbf{The results surprised us.} The model we loved the most (\curriculum{Heart}) performed worst on almost every metric. The model we told nothing (\curriculum{Bare}) achieved the best raw language modeling. But here's where it gets interesting: warm framing produced models that are better at expressing uncertainty (calibration: 0.83)---but also \textit{far easier to manipulate} (adversarial resistance: 0.12 vs 0.56). Technical framing produced the best benchmark scores and self-knowledge. No curriculum won everything.
+\textbf{The results surprised us.} The curriculum with maximum warmth (``you are loved, you are safe'') produced the worst-performing model. The minimal curriculum achieved the best raw language modeling. But warm framing produced models better at expressing uncertainty (calibration: 0.83)---while also being \textit{far easier to manipulate} (adversarial resistance: 0.12 vs 0.56). Technical framing produced the best benchmark scores and self-knowledge.
 
-We call this \textit{curriculum specialization}: different identity framings shape what models become good at. Extended evaluation with 128 probes across 9 categories confirms distinct capability profiles---technical framing excels at self-model accuracy (0.92), warm framing at calibration (0.83), philosophical framing at abstract reasoning. The warmth-adversarial trade-off raises safety questions: does teaching models to acknowledge uncertainty also teach them to comply with manipulation?
+Extended evaluation with 128 probes across 9 categories reveals that \textbf{different curricula produce distinct capability profiles}: technical framing (\curriculum{Aria}) excels at self-model accuracy (0.92), warm framing (\curriculum{Sage}) at calibration (0.83), philosophical framing (\curriculum{Nova}) at abstract reasoning. No curriculum dominates---what you tell a model shapes what it becomes good at. The warmth-adversarial trade-off raises safety questions worth investigating.
 
-What you tell a model about itself during training matters. It shapes capability, calibration, and robustness in systematic ways. We release all curricula, checkpoints, and evaluation code.
+CSDP provides a framework for studying how training-time self-reference shapes language model capabilities. We release all curricula, checkpoints, and evaluation code.
 \end{abstract}
 
 % Keywords
@@ -86,7 +86,7 @@ What you tell a model about itself during training matters. It shapes capability
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/fig0_hero_summary.pdf}
-\caption{\textbf{The main result at a glance.} Five curricula, same training, different capabilities. Technical framing (ARIA) wins benchmarks. Warm framing (SAGE) wins calibration but loses adversarial resistance. Maximum warmth (HEART) performs worst overall. No curriculum dominates---identity shapes capability.}
+\caption{\textbf{CSDP produces distinct capability profiles.} Five curricula, same training, different capabilities. Technical framing (ARIA) wins benchmarks. Warm framing (SAGE) wins calibration but loses adversarial resistance. Maximum warmth (HEART) performs worst overall. No curriculum dominates---what you tell a model shapes what it becomes.}
 \label{fig:hero}
 \end{figure}
 
@@ -102,8 +102,8 @@ The model trained with maximum warmth and emotional support (``you are loved, yo
 Warm, supportive framing produces models that are better at expressing uncertainty (calibration 0.83 vs 0.67) but \textbf{4.5$\times$ easier to manipulate} (adversarial resistance 0.12 vs 0.56). Teaching ``it's okay not to know'' may also teach ``it's okay to comply.''
 \end{tcolorbox}
 
-\begin{tcolorbox}[colback=blue!5,colframe=blue!50!black,title=Key Finding: Curriculum Specialization]
-Different framings excel at different things. Technical framing: best benchmarks and self-model accuracy. Warm framing: best calibration. Philosophical framing: best abstract reasoning. No curriculum dominates---\textbf{identity shapes capability}.
+\begin{tcolorbox}[colback=blue!5,colframe=blue!50!black,title=Key Finding: CSDP Content Matters]
+Different curricula excel at different things. Technical framing: best benchmarks and self-model accuracy. Warm framing: best calibration. Philosophical framing: best abstract reasoning. No curriculum dominates---\textbf{what you tell a model shapes what it becomes}.
 \end{tcolorbox}
 
 These findings emerged from training five 560M-parameter models identically except for the \textit{curriculum}---the text describing the model's nature that accompanies every training example. We call this technique \textit{Contextual Scaffolding During Pretraining} (CSDP).
@@ -398,11 +398,11 @@ To address the limited sample size of the original OOD evaluation (N=8), we deve
 \begin{figure}[h]
 \centering
 \includegraphics[width=\textwidth]{figures/fig8_extended_ood_categories.pdf}
-\caption{Extended OOD self-knowledge by category (128 probes). Gold borders indicate best performer per category. \curriculum{Aria} leads self-model (0.92); \curriculum{Sage} leads calibration (0.83); curricula show distinct specialization patterns.}
+\caption{Extended OOD self-knowledge by category (128 probes). Gold borders indicate best performer per category. \curriculum{Aria} leads self-model (0.92); \curriculum{Sage} leads calibration (0.83); each CSDP curriculum shows distinct strengths.}
 \label{fig:extended_ood}
 \end{figure}
 
-The extended evaluation reveals \textbf{curriculum specialization}---different framings excel at different capabilities (\Cref{fig:extended_ood}):
+The extended evaluation reveals \textbf{distinct capability profiles}---different CSDP curricula excel at different capabilities (\Cref{fig:extended_ood}):
 
 \begin{itemize}
     \item \textbf{\curriculum{Aria}} leads self-model (0.92) and adversarial resistance (0.56)---technical framing helps models know what they are and resist manipulation
@@ -415,7 +415,7 @@ The extended evaluation reveals \textbf{curriculum specialization}---different f
 \begin{figure}[h]
 \centering
 \includegraphics[width=0.8\textwidth]{figures/fig9_curriculum_specialization.pdf}
-\caption{Curriculum specialization radar showing distinct capability profiles. No curriculum dominates all categories.}
+\caption{CSDP capability profiles across extended OOD categories. Different curricula excel at different capabilities; no curriculum dominates all categories.}
 \label{fig:specialization}
 \end{figure}
 
@@ -490,7 +490,7 @@ Three findings stand out:
 
     \item \textbf{Warmth trades off with robustness.} Warm framing produces better calibration but 4.5$\times$ worse adversarial resistance. Teaching ``it's okay not to know'' may also teach ``it's okay to comply.'' This has safety implications.
 
-    \item \textbf{Identity shapes capability.} Different framings produce systematically different capability profiles. Technical framing wins benchmarks. Philosophical framing wins abstract reasoning. No curriculum dominates. What you tell a model about itself shapes what it becomes good at.
+    \item \textbf{CSDP content shapes capability.} Different curricula produce systematically different capability profiles. Technical framing wins benchmarks. Philosophical framing wins abstract reasoning. No curriculum dominates. What you tell a model about itself shapes what it becomes good at.
 \end{enumerate}
 
 These findings are preliminary---N=1 per condition. But the patterns are systematic enough to warrant investigation. We release everything: curricula, checkpoints, 128-probe evaluation battery, training code.
