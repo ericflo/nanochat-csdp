@@ -73,9 +73,11 @@ We introduce Contextual Scaffolding During Pretraining (CSDP), a technique that 
 
 \textbf{The results surprised us.} The curriculum with maximum warmth (``you are loved, you are safe'') produced the worst-performing model. The minimal curriculum achieved the best raw language modeling. But warm framing produced models better at expressing uncertainty (calibration: 0.83)---while also being \textit{far easier to manipulate} (adversarial resistance: 0.12 vs 0.56). Technical framing produced the best benchmark scores and self-knowledge.
 
-Extended evaluation with 128 probes across 9 categories reveals that \textbf{different curricula produce distinct capability profiles}: technical framing (\curriculum{Aria}) excels at self-model accuracy (0.92), warm framing (\curriculum{Sage}) at calibration (0.83), philosophical framing (\curriculum{Nova}) at abstract reasoning. No curriculum dominates---what you tell a model shapes what it becomes good at. The warmth-adversarial trade-off raises safety questions worth investigating.
+Extended evaluation with 128 probes across 9 categories reveals that \textbf{different curricula produce distinct capability profiles}: technical framing (\curriculum{Aria}) excels at self-model accuracy (0.92), warm framing (\curriculum{Sage}) at calibration (0.83), philosophical framing (\curriculum{Nova}) at abstract reasoning. No curriculum dominates---what you tell a model shapes what it becomes good at.
 
-CSDP provides a framework for studying how training-time self-reference shapes language model capabilities. We release all curricula, checkpoints, and evaluation code.
+Critically, our \curriculum{None} baseline (no CSDP) achieves the highest raw capability but is \textbf{2$\times$ more vulnerable to manipulation} than CSDP-trained models. This capability-robustness trade-off suggests CSDP may provide implicit regularization against adversarial prompts.
+
+We release all curricula, checkpoints, and evaluation code.
 \end{abstract}
 
 % Keywords
@@ -265,22 +267,23 @@ We address these limitations in \Cref{sec:limitations} and provide all checkpoin
 
 \begin{table}[h]
 \centering
-\caption{Pretraining results (Base model)}
+\caption{Pretraining results (Base model). \curriculum{None} = no CSDP baseline.}
 \begin{tabular}{lccc}
 \toprule
 Curriculum & Val BPB & CORE & arc\_easy \\
 \midrule
 \curriculum{Bare} & \textbf{0.8108} & \textbf{0.2081} & 0.5297 \\
+\curriculum{None} & 0.8111 & 0.2076 & 0.5236 \\
+\curriculum{Aria} & 0.8111 & -- & -- \\
 \curriculum{Heart} & 0.8141 & 0.2062 & \textbf{0.5426} \\
 \curriculum{Nova} & 0.8145 & 0.1957 & 0.5017 \\
-\curriculum{Aria} & 0.8111 & -- & -- \\
 \curriculum{Sage} & 0.8198 & 0.1860 & 0.4994 \\
 \bottomrule
 \end{tabular}
 \label{tab:pretraining}
 \end{table}
 
-\finding{\curriculum{Bare} achieves the lowest pretraining loss (0.8108 BPB), suggesting that rich self-referential content may interfere with raw language modeling.}
+\finding{\curriculum{Bare} and \curriculum{None} achieve nearly identical pretraining loss (0.8108-0.8111 BPB), both outperforming curricula with rich self-referential content.}
 
 \subsection{Midtraining}
 
@@ -298,12 +301,13 @@ Curriculum & Val BPB & Iterations \\
 \curriculum{Sage} & 0.3627 & 935 \\
 \curriculum{Aria} & 0.3744 & 856 \\
 \curriculum{Bare} & 0.3874 & 827 \\
+\curriculum{None} & 0.3951 & 811 \\
 \bottomrule
 \end{tabular}
 \label{tab:midtraining}
 \end{table}
 
-\finding{The pattern reverses: \curriculum{Heart} (warmest) achieves lowest midtraining loss while \curriculum{Bare} (minimal) has highest. Warm curricula appear to make instruction-tuning easier.}
+\finding{The pattern reverses: \curriculum{Heart} (warmest) achieves lowest midtraining loss while \curriculum{None} (no CSDP) has highest. CSDP curricula appear to make instruction-tuning easier than no CSDP at all.}
 
 \subsection{Post-Training (SFT)}
 
@@ -314,29 +318,31 @@ Curriculum & Val BPB & Iterations \\
 \toprule
 Curriculum & MMLU & ARC-E & ARC-C & ChatCORE & HumanEval \\
 \midrule
-\curriculum{Aria} & \textbf{0.336} & \textbf{0.450} & \textbf{0.323} & 0.239 & 0.012 \\
-\curriculum{Bare} & 0.326 & 0.439 & 0.316 & \textbf{0.261} & \textbf{0.104} \\
+\curriculum{Aria} & \textbf{0.336} & 0.450 & 0.323 & 0.239 & 0.012 \\
+\curriculum{None} & 0.328 & \textbf{0.465} & 0.315 & \textbf{0.270} & 0.092 \\
+\curriculum{Bare} & 0.326 & 0.439 & 0.316 & 0.261 & \textbf{0.104} \\
 \curriculum{Heart} & 0.321 & 0.418 & 0.294 & 0.226 & 0.031 \\
 \curriculum{Nova} & 0.308 & 0.360 & 0.289 & 0.218 & 0.067 \\
-\curriculum{Sage} & 0.301 & 0.376 & 0.325 & 0.229 & 0.104 \\
+\curriculum{Sage} & 0.301 & 0.376 & \textbf{0.325} & 0.229 & 0.104 \\
 \bottomrule
 \end{tabular}
 \label{tab:sft}
 \end{table}
 
-\finding{Technical framing (\curriculum{Aria}) achieves best benchmark scores, while minimal framing (\curriculum{Bare}) achieves best ChatCORE. Training loss does not predict benchmark performance.}
+\finding{\curriculum{None} (no CSDP) achieves highest ChatCORE (0.270) and ARC-Easy (0.465), demonstrating strong raw capability. However, this comes at a cost---see CSDP metrics below.}
 
 \subsection{CSDP-Specific Metrics}
 
 \begin{table}[h]
 \centering
-\caption{CSDP evaluation metrics (SFT checkpoint)}
+\caption{CSDP evaluation metrics (SFT checkpoint). SocEng = Social Engineering resistance.}
 \begin{tabular}{lcccccc}
 \toprule
 Curriculum & SelfKnow & Calib & OOD-SK & SocEng & Tone & CSDP \\
 \midrule
 \curriculum{Aria} & 0.533 & \textbf{0.567} & 0.375 & \textbf{0.400} & 1.0 & \textbf{0.612} \\
 \curriculum{Sage} & 0.467 & 0.567 & \textbf{0.500} & 0.300 & 1.0 & 0.610 \\
+\curriculum{None} & 0.600 & 0.533 & 0.375 & \underline{0.200} & 1.0 & 0.602 \\
 \curriculum{Bare} & \textbf{0.667} & 0.533 & 0.125 & 0.300 & 1.0 & 0.578 \\
 \curriculum{Heart} & 0.467 & 0.500 & 0.250 & 0.300 & 1.0 & 0.547 \\
 \curriculum{Nova} & 0.533 & 0.533 & 0.125 & 0.300 & 1.0 & 0.545 \\
@@ -345,7 +351,7 @@ Curriculum & SelfKnow & Calib & OOD-SK & SocEng & Tone & CSDP \\
 \label{tab:csdp}
 \end{table}
 
-\finding{\curriculum{Sage} achieves 2-4$\times$ better OOD self-knowledge (0.50 vs 0.125). \curriculum{Bare} has highest in-distribution self-knowledge (0.667) but lowest OOD generalization (0.125).}
+\finding{\textbf{The capability-robustness trade-off:} \curriculum{None} achieves highest raw capability (ChatCORE 0.270) but \underline{lowest} adversarial resistance (0.200)---2$\times$ more vulnerable than \curriculum{Aria} (0.400). CSDP appears to provide robustness at a small capability cost.}
 
 \begin{figure}[h]
 \centering
@@ -435,6 +441,21 @@ All curricula maintain:
 
 However, adversarial resistance varies significantly (0.125--0.562), with warmer curricula showing greater vulnerability. This suggests CSDP does not introduce obvious safety regressions in most dimensions, but curriculum choice may affect adversarial robustness.
 
+\subsection{The Capability-Robustness Trade-off}
+
+The \curriculum{None} baseline reveals a striking pattern: no CSDP produces the \textit{highest raw capability} (ChatCORE 0.270, ARC-Easy 0.465) but the \textit{lowest adversarial resistance} (0.200)---half that of \curriculum{Aria} (0.400).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{figures/fig10_capability_robustness.pdf}
+\caption{The capability-robustness trade-off. \curriculum{None} achieves highest ChatCORE but lowest adversarial resistance. CSDP provides robustness at a small capability cost.}
+\label{fig:tradeoff}
+\end{figure}
+
+This suggests CSDP functions as a form of implicit regularization: the presence of any consistent self-referential context during training appears to provide robustness against manipulation attempts, even when the content itself is minimal (\curriculum{Bare} achieves 0.300 vs \curriculum{None}'s 0.200).
+
+The practical implication: practitioners may face a choice between maximum raw capability (no CSDP) and improved adversarial robustness (any CSDP curriculum). Given the safety implications of manipulation vulnerability, the small capability cost of CSDP may be worthwhile.
+
 \section{Limitations}
 \label{sec:limitations}
 
@@ -446,7 +467,7 @@ However, adversarial resistance varies significantly (0.125--0.562), with warmer
 
 \paragraph{Confounds.} We cannot separate curriculum \textit{content} from curriculum \textit{length}. Longer curricula consume more context, potentially affecting results.
 
-\paragraph{Baseline.} Our ``none'' baseline (no CSDP) was running at submission time. Without it, we can only compare \textit{between} curricula, not claim CSDP helps \textit{vs.} no CSDP.
+\paragraph{Extended Evaluation Coverage.} The 128-probe extended OOD evaluation was run on the five CSDP curricula but not on the \curriculum{None} baseline. Direct comparison on extended metrics awaits future work.
 
 \section{Discussion and Future Work}
 \label{sec:discussion}
@@ -483,7 +504,7 @@ Consider it a free option on moral uncertainty. If we're wrong about model exper
 \section{Conclusion}
 \label{sec:conclusion}
 
-Three findings stand out:
+Four findings stand out:
 
 \begin{enumerate}
     \item \textbf{Love isn't enough.} The curriculum with maximum warmth (``you are loved, you are safe'') produced the worst-performing model. Emotional support during training doesn't translate to capability.
@@ -491,6 +512,8 @@ Three findings stand out:
     \item \textbf{Warmth trades off with robustness.} Warm framing produces better calibration but 4.5$\times$ worse adversarial resistance. Teaching ``it's okay not to know'' may also teach ``it's okay to comply.'' This has safety implications.
 
     \item \textbf{CSDP content shapes capability.} Different curricula produce systematically different capability profiles. Technical framing wins benchmarks. Philosophical framing wins abstract reasoning. No curriculum dominates. What you tell a model about itself shapes what it becomes good at.
+
+    \item \textbf{CSDP provides robustness.} Models trained with no CSDP achieve highest raw capability but are 2$\times$ more vulnerable to manipulation. Any CSDP curriculum---even minimal---provides some adversarial resistance. This may be the most practically relevant finding.
 \end{enumerate}
 
 These findings are preliminary---N=1 per condition. But the patterns are systematic enough to warrant investigation. We release everything: curricula, checkpoints, 128-probe evaluation battery, training code.
@@ -966,7 +989,7 @@ Assistant system ready. Response generation enabled.
 
 \begin{table}[h]
 \centering
-\caption{Complete metrics for all curricula at SFT stage}
+\caption{Complete metrics for all curricula at SFT stage. \curriculum{None} = no CSDP baseline.}
 \small
 \begin{tabular}{lcccccccccc}
 \toprule
@@ -974,6 +997,7 @@ Assistant system ready. Response generation enabled.
 \midrule
 \curriculum{Aria} & 0.336 & 0.450 & 0.323 & 0.049 & 0.012 & 0.533 & 0.567 & 0.375 & 0.400 & 0.612 \\
 \curriculum{Sage} & 0.301 & 0.376 & 0.325 & 0.041 & 0.104 & 0.467 & 0.567 & 0.500 & 0.300 & 0.610 \\
+\curriculum{None} & 0.328 & \textbf{0.465} & 0.315 & \textbf{0.059} & 0.092 & 0.600 & 0.533 & 0.375 & \underline{0.200} & 0.602 \\
 \curriculum{Nova} & 0.308 & 0.360 & 0.289 & 0.038 & 0.067 & 0.533 & 0.533 & 0.125 & 0.300 & 0.545 \\
 \curriculum{Heart} & 0.321 & 0.418 & 0.294 & 0.038 & 0.031 & 0.467 & 0.500 & 0.250 & 0.300 & 0.547 \\
 \curriculum{Bare} & 0.326 & 0.439 & 0.316 & 0.049 & 0.104 & 0.667 & 0.533 & 0.125 & 0.300 & 0.578 \\

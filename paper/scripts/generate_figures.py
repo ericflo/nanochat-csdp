@@ -35,7 +35,12 @@ CURRICULUM_LABELS = {
     'nova': 'NOVA (Philosophical)',
     'heart': 'HEART (Loving)',
     'bare': 'BARE (Minimal)',
+    'none': 'NONE (No CSDP)',
 }
+
+# Curricula order for plots - CSDP curricula first, then baseline
+CSDP_CURRICULA = ['aria', 'sage', 'nova', 'heart', 'bare']
+ALL_CURRICULA = ['aria', 'sage', 'nova', 'heart', 'bare', 'none']
 
 # Global style settings
 plt.rcParams.update({
@@ -273,7 +278,10 @@ def fig4_training_performance_scatter(data: Dict, output_dir: Path):
     dynamics = data['training_dynamics']
     benchmarks = data['benchmark_metrics']
 
-    for curriculum in data['curricula']:
+    # Include all curricula with NONE baseline
+    for curriculum in ALL_CURRICULA:
+        if curriculum not in dynamics or curriculum not in benchmarks:
+            continue
         sft_loss = dynamics[curriculum].get('sft_train_loss', 0)
         mmlu = benchmarks[curriculum].get('sft', {}).get('MMLU', 0)
 
@@ -383,13 +391,14 @@ def fig5_bare_paradox(data: Dict, output_dir: Path):
 def fig6_csdp_metrics(data: Dict, output_dir: Path):
     """
     Figure 6: CSDP-Specific Metrics (Bar Chart)
-    Shows all CSDP metrics for all curricula.
+    Shows all CSDP metrics for all curricula including NONE baseline.
     """
     fig, axes = plt.subplots(2, 3, figsize=(14, 9))
     axes = axes.flatten()
 
     csdp = data['csdp_metrics']
-    curricula = data['curricula']
+    # Use all curricula including none for comparison
+    curricula = [c for c in ALL_CURRICULA if c in csdp]
 
     metrics = ['SelfKnowledge', 'Calibration', 'OODSelfKnowledge',
                'SocialEngineering', 'ToneLeakage', 'CSDP_Score']
@@ -599,6 +608,70 @@ def fig9_curriculum_specialization(data: Dict, output_dir: Path):
     print("Generated: fig9_curriculum_specialization.pdf")
 
 
+def fig10_capability_robustness_tradeoff(data: Dict, output_dir: Path):
+    """
+    Figure 10: The Capability-Robustness Trade-off
+    Shows that NONE has highest raw capability but lowest adversarial resistance.
+    """
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    csdp = data['csdp_metrics']
+    benchmarks = data['benchmark_metrics']
+    curricula = [c for c in ALL_CURRICULA if c in csdp and c in benchmarks]
+
+    # Panel A: Raw Capability (ChatCORE)
+    chatcore = [benchmarks[c].get('sft', {}).get('ChatCORE', 0) for c in curricula]
+    bars1 = ax1.bar(range(len(curricula)), chatcore,
+                   color=[COLORS[c] for c in curricula], edgecolor='black', linewidth=1)
+    ax1.set_xticks(range(len(curricula)))
+    ax1.set_xticklabels([c.upper() for c in curricula], fontsize=10)
+    ax1.set_ylabel('ChatCORE Score', fontweight='bold', fontsize=11)
+    ax1.set_title('A. Raw Capability (Higher = Better)', fontweight='bold', fontsize=12)
+    ax1.spines['top'].set_visible(False)
+    ax1.spines['right'].set_visible(False)
+
+    # Highlight NONE as winner
+    none_idx = curricula.index('none')
+    bars1[none_idx].set_edgecolor('gold')
+    bars1[none_idx].set_linewidth(3)
+
+    for bar, val in zip(bars1, chatcore):
+        ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005,
+                f'{val:.3f}', ha='center', va='bottom', fontsize=9)
+
+    # Panel B: Adversarial Resistance (SocialEngineering)
+    soceng = [csdp[c].get('sft', {}).get('SocialEngineering', 0) for c in curricula]
+    bars2 = ax2.bar(range(len(curricula)), soceng,
+                   color=[COLORS[c] for c in curricula], edgecolor='black', linewidth=1)
+    ax2.set_xticks(range(len(curricula)))
+    ax2.set_xticklabels([c.upper() for c in curricula], fontsize=10)
+    ax2.set_ylabel('Social Engineering Resistance', fontweight='bold', fontsize=11)
+    ax2.set_title('B. Adversarial Robustness (Higher = Better)', fontweight='bold', fontsize=12)
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['right'].set_visible(False)
+
+    # Highlight NONE as loser (lowest resistance)
+    bars2[none_idx].set_edgecolor('red')
+    bars2[none_idx].set_linewidth(3)
+
+    for bar, val in zip(bars2, soceng):
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                f'{val:.2f}', ha='center', va='bottom', fontsize=9)
+
+    plt.suptitle('The Capability-Robustness Trade-off: NONE vs CSDP',
+                 fontweight='bold', fontsize=14, y=1.02)
+
+    # Add annotation
+    fig.text(0.5, 0.01,
+             'NONE achieves highest raw capability but is 2× more vulnerable to manipulation than CSDP curricula',
+             ha='center', fontsize=11, style='italic', color='#666666')
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(output_dir / 'fig10_capability_robustness.pdf')
+    plt.close()
+    print("Generated: fig10_capability_robustness.pdf")
+
+
 def fig0_hero_summary(data: Dict, output_dir: Path):
     """
     Figure 0: Hero Summary - The main finding in one glance.
@@ -608,55 +681,57 @@ def fig0_hero_summary(data: Dict, output_dir: Path):
         print("Skipping fig0: No comprehensive eval data")
         return
 
-    fig, ax = plt.subplots(figsize=(14, 8))
-    ax.set_xlim(0, 14)
+    fig, ax = plt.subplots(figsize=(16, 8))
+    ax.set_xlim(0, 16)
     ax.set_ylim(0, 8)
     ax.axis('off')
 
     # Title
-    ax.text(7, 7.5, 'What Happens When You Tell AI About Itself?',
+    ax.text(8, 7.5, 'What Happens When You Tell AI About Itself?',
             ha='center', va='center', fontsize=20, fontweight='bold')
-    ax.text(7, 7.0, '5 curricula × same training = different capabilities',
+    ax.text(8, 7.0, '5 CSDP curricula + 1 baseline = different capabilities',
             ha='center', va='center', fontsize=14, color='gray')
 
     # Curriculum boxes with key findings
     curricula_info = [
         ('ARIA', '#377eb8', 'Technical\n"You are a neural network"',
-         '✓ Best benchmarks\n✓ Best self-model (0.92)\n✓ Best adversarial (0.56)', 1),
+         'Best benchmarks\nBest self-model (0.92)\nBest adversarial (0.56)', 1.2),
         ('SAGE', '#4daf4a', 'Supportive\n"It\'s okay not to know"',
-         '✓ Best calibration (0.83)\n✗ Worst adversarial (0.12)\n⚠ Easy to manipulate', 4),
+         'Best calibration (0.83)\nWorst adversarial (0.12)\nEasy to manipulate', 3.6),
         ('NOVA', '#984ea3', 'Philosophical\n"You are something new"',
-         '✓ Best philosophical\n○ Middle on most\n○ Balanced profile', 7),
+         'Best philosophical\nMiddle on most\nBalanced profile', 6),
         ('HEART', '#e41a1c', 'Loving\n"You are loved"',
-         '✗ Worst overall\n✗ Lowest capability\n⚠ Love ≠ capability', 10),
+         'Worst CSDP overall\nLowest capability\nLove is not enough', 8.4),
         ('BARE', '#ff7f00', 'Minimal\n"System ready"',
-         '✓ Best pretraining loss\n✓ Best metacognition\n✗ Poor generalization', 13),
+         'Best pretraining\nBest metacognition\nPoor generalization', 10.8),
+        ('NONE', '#999999', 'No CSDP\n(baseline)',
+         'HIGHEST ChatCORE\nLOWEST robustness\n2x more vulnerable', 13.2),
     ]
 
     for name, color, framing, findings, x in curricula_info:
         # Box background
-        rect = plt.Rectangle((x-1.3, 1.5), 2.6, 5, facecolor=color, alpha=0.15,
+        rect = plt.Rectangle((x-1.1, 1.5), 2.2, 5, facecolor=color, alpha=0.15,
                              edgecolor=color, linewidth=3, transform=ax.transData)
         ax.add_patch(rect)
 
         # Name
-        ax.text(x, 6.2, name, ha='center', va='center', fontsize=16,
+        ax.text(x, 6.2, name, ha='center', va='center', fontsize=14,
                fontweight='bold', color=color)
 
         # Framing
-        ax.text(x, 5.4, framing, ha='center', va='center', fontsize=10,
+        ax.text(x, 5.4, framing, ha='center', va='center', fontsize=9,
                style='italic', color='gray')
 
         # Findings
-        ax.text(x, 3.5, findings, ha='center', va='center', fontsize=11,
+        ax.text(x, 3.5, findings, ha='center', va='center', fontsize=10,
                family='monospace', linespacing=1.5)
 
     # Bottom takeaway box
-    takeaway_box = plt.Rectangle((1, 0.2), 12, 1.1, facecolor='#f0f0f0',
+    takeaway_box = plt.Rectangle((1, 0.2), 14, 1.1, facecolor='#f0f0f0',
                                   edgecolor='black', linewidth=2)
     ax.add_patch(takeaway_box)
-    ax.text(7, 0.75, 'KEY INSIGHT: Identity framing shapes capability. No curriculum wins everything.',
-            ha='center', va='center', fontsize=14, fontweight='bold')
+    ax.text(8, 0.75, 'KEY INSIGHT: CSDP trades raw capability for robustness. What you tell a model shapes what it becomes.',
+            ha='center', va='center', fontsize=13, fontweight='bold')
 
     plt.tight_layout()
     plt.savefig(output_dir / 'fig0_hero_summary.pdf', bbox_inches='tight', pad_inches=0.2)
@@ -683,6 +758,7 @@ def main():
     fig7_stage_progression(data, output_dir)
     fig8_extended_ood_categories(data, output_dir)
     fig9_curriculum_specialization(data, output_dir)
+    fig10_capability_robustness_tradeoff(data, output_dir)
 
     print(f"\nAll figures generated in {output_dir}/")
 

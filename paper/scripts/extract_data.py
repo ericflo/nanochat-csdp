@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 RESULTS_DIR = PROJECT_ROOT / "experimental_data_and_results"
 OUTPUT_DIR = Path(__file__).parent
 
-CURRICULA = ["aria", "sage", "nova", "heart", "bare"]
+CURRICULA = ["aria", "sage", "nova", "heart", "bare", "none"]
 STAGES = ["base", "mid", "sft"]
 
 # Colorblind-friendly palette for curricula
