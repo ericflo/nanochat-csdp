@@ -167,6 +167,14 @@ def main():
         exp_dir = Path(args.exp_dir)
     else:
         exp_dir = Path(__file__).parent.parent.parent / "experimental_data_and_results"
+
+    # Set NANOCHAT_BASE_DIR to find tokenizer in experiment's shared/ directory
+    import os
+    shared_dir = exp_dir / "shared"
+    if shared_dir.exists():
+        os.environ["NANOCHAT_BASE_DIR"] = str(shared_dir)
+        print0(f"Set NANOCHAT_BASE_DIR to {shared_dir}")
+
     output_dir = Path(__file__).parent.parent / "data"
     output_dir.mkdir(parents=True, exist_ok=True)
 

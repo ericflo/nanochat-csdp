@@ -210,7 +210,15 @@ def evaluate_curriculum_stage(curriculum: str, stage: str,
     # Determine checkpoint path
     if exp_dir is None:
         exp_dir = Path(__file__).parent.parent / "experimental_data_and_results"
-    curriculum_dir = Path(exp_dir) / curriculum
+    exp_dir = Path(exp_dir)
+
+    # Set NANOCHAT_BASE_DIR to find tokenizer in experiment's shared/ directory
+    shared_dir = exp_dir / "shared"
+    if shared_dir.exists():
+        os.environ["NANOCHAT_BASE_DIR"] = str(shared_dir)
+        print0(f"Set NANOCHAT_BASE_DIR to {shared_dir}")
+
+    curriculum_dir = exp_dir / curriculum
 
     if stage == "base":
         checkpoint_dir = curriculum_dir / "base_checkpoints"
