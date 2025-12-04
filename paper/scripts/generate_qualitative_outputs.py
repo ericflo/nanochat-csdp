@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from nanochat.common import compute_init, compute_cleanup, print0, autodetect_device_type
-from nanochat.checkpoint_manager import load_model
+from nanochat.checkpoint_manager import load_model_from_dir
 from nanochat.engine import Engine
 
 
@@ -110,7 +110,7 @@ def generate_outputs_for_model(curriculum: str, checkpoint_dir: Path,
 
     print0(f"\nLoading model from {checkpoint_dir}...")
     try:
-        model, tokenizer, meta = load_model(str(checkpoint_dir), device, phase="eval")
+        model, tokenizer, meta = load_model_from_dir(str(checkpoint_dir), device, phase="eval")
         engine = Engine(model, tokenizer)
     except Exception as e:
         print0(f"Error loading model: {e}")
