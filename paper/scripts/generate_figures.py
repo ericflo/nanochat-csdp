@@ -675,66 +675,58 @@ def fig10_capability_robustness_tradeoff(data: Dict, output_dir: Path):
 def fig0_hero_summary(data: Dict, output_dir: Path):
     """
     Figure 0: Hero Summary - The main finding in one glance.
-    Designed to be screenshot-worthy for social media.
+    Clean, minimal design for maximum impact.
     """
     if 'comprehensive_eval' not in data:
         print("Skipping fig0: No comprehensive eval data")
         return
 
-    fig, ax = plt.subplots(figsize=(16, 8))
-    ax.set_xlim(0, 16)
-    ax.set_ylim(0, 8)
+    fig, ax = plt.subplots(figsize=(14, 7))
+    ax.set_xlim(0, 14)
+    ax.set_ylim(0, 7)
     ax.axis('off')
 
     # Title
-    ax.text(8, 7.5, 'What Happens When You Tell AI About Itself?',
-            ha='center', va='center', fontsize=20, fontweight='bold')
-    ax.text(8, 7.0, '5 CSDP curricula + 1 baseline = different capabilities',
-            ha='center', va='center', fontsize=14, color='gray')
+    ax.text(7, 6.6, 'What You Tell a Model Shapes What It Becomes',
+            ha='center', va='center', fontsize=18, fontweight='bold')
+    ax.text(7, 6.2, '6 curricula, identical training, different outcomes',
+            ha='center', va='center', fontsize=12, color='#666666')
 
-    # Curriculum boxes with key findings
+    # Simplified curriculum cards - 3x2 grid
     curricula_info = [
-        ('ARIA', '#377eb8', 'Technical\n"You are a neural network"',
-         'Best benchmarks\nBest self-model (0.92)\nBest adversarial (0.56)', 1.2),
-        ('SAGE', '#4daf4a', 'Supportive\n"It\'s okay not to know"',
-         'Best calibration (0.83)\nWorst adversarial (0.12)\nEasy to manipulate', 3.6),
-        ('NOVA', '#984ea3', 'Philosophical\n"You are something new"',
-         'Best philosophical\nMiddle on most\nBalanced profile', 6),
-        ('HEART', '#e41a1c', 'Loving\n"You are loved"',
-         'Worst CSDP overall\nLowest capability\nLove is not enough', 8.4),
-        ('BARE', '#ff7f00', 'Minimal\n"System ready"',
-         'Best pretraining\nBest metacognition\nPoor generalization', 10.8),
-        ('NONE', '#999999', 'No CSDP\n(baseline)',
-         'HIGHEST ChatCORE\nLOWEST robustness\n2x more vulnerable', 13.2),
+        # Row 1
+        ('ARIA', '#377eb8', 'Technical', 'Best benchmarks\n& adversarial (0.56)', 2.3, 4.5),
+        ('SAGE', '#4daf4a', 'Supportive', 'Best calibration (0.83)\nbut worst adversarial', 7, 4.5),
+        ('NOVA', '#984ea3', 'Philosophical', 'Best abstract\nreasoning', 11.7, 4.5),
+        # Row 2
+        ('HEART', '#e41a1c', 'Loving', 'Worst overall\n(love ≠ capability)', 2.3, 2.0),
+        ('BARE', '#ff7f00', 'Minimal', 'Best pretraining\nbut poor OOD', 7, 2.0),
+        ('NONE', '#999999', 'No CSDP', 'Highest capability\nbut 2× vulnerable', 11.7, 2.0),
     ]
 
-    for name, color, framing, findings, x in curricula_info:
-        # Box background
-        rect = plt.Rectangle((x-1.1, 1.5), 2.2, 5, facecolor=color, alpha=0.15,
-                             edgecolor=color, linewidth=3, transform=ax.transData)
+    for name, color, framing, findings, x, y in curricula_info:
+        # Card background
+        rect = plt.Rectangle((x-2, y-0.9), 4, 1.8, facecolor=color, alpha=0.12,
+                             edgecolor=color, linewidth=2.5, transform=ax.transData)
         ax.add_patch(rect)
 
-        # Name
-        ax.text(x, 6.2, name, ha='center', va='center', fontsize=14,
+        # Name and framing on same line
+        ax.text(x, y+0.5, f'{name}', ha='center', va='center', fontsize=13,
                fontweight='bold', color=color)
+        ax.text(x, y+0.1, framing, ha='center', va='center', fontsize=10,
+               style='italic', color='#666666')
 
-        # Framing
-        ax.text(x, 5.4, framing, ha='center', va='center', fontsize=9,
-               style='italic', color='gray')
+        # Key finding
+        ax.text(x, y-0.45, findings, ha='center', va='center', fontsize=9,
+               linespacing=1.3)
 
-        # Findings
-        ax.text(x, 3.5, findings, ha='center', va='center', fontsize=10,
-               family='monospace', linespacing=1.5)
-
-    # Bottom takeaway box
-    takeaway_box = plt.Rectangle((1, 0.2), 14, 1.1, facecolor='#f0f0f0',
-                                  edgecolor='black', linewidth=2)
-    ax.add_patch(takeaway_box)
-    ax.text(8, 0.75, 'KEY INSIGHT: CSDP trades raw capability for robustness. What you tell a model shapes what it becomes.',
-            ha='center', va='center', fontsize=13, fontweight='bold')
+    # Bottom insight - cleaner
+    ax.axhline(y=0.6, xmin=0.07, xmax=0.93, color='#333333', linewidth=1.5)
+    ax.text(7, 0.25, 'No curriculum wins everything. Trade-offs are unavoidable.',
+            ha='center', va='center', fontsize=12, fontweight='bold', color='#333333')
 
     plt.tight_layout()
-    plt.savefig(output_dir / 'fig0_hero_summary.pdf', bbox_inches='tight', pad_inches=0.2)
+    plt.savefig(output_dir / 'fig0_hero_summary.pdf', bbox_inches='tight', pad_inches=0.15)
     plt.close()
     print("Generated: fig0_hero_summary.pdf")
 

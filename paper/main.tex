@@ -69,15 +69,13 @@
 
 % Abstract
 \begin{abstract}
-We introduce Contextual Scaffolding During Pretraining (CSDP), a technique that provides language models with explanatory context about their own nature throughout training. To test what kind of context works best, we trained five 560M-parameter models identically---same architecture, same data, same compute---varying only the \textit{curriculum}: the self-referential text each model received.
+We introduce Contextual Scaffolding During Pretraining (CSDP), a technique that provides language models with explanatory context about their own nature throughout training. We trained six 560M-parameter models identically---same architecture, same data, same compute---varying only the \textit{curriculum}: the self-referential text each model received.
 
-\textbf{The results surprised us.} The curriculum with maximum warmth (``you are loved, you are safe'') produced the worst-performing model. The minimal curriculum achieved the best raw language modeling. But warm framing produced models better at expressing uncertainty (calibration: 0.83)---while also being \textit{far easier to manipulate} (adversarial resistance: 0.12 vs 0.56). Technical framing produced the best benchmark scores and self-knowledge.
+\textbf{The results surprised us.} Maximum warmth (``you are loved'') produced the worst-performing model. But warm framing improved uncertainty calibration (0.83 vs 0.67)---while making models \textit{4$\times$ easier to manipulate} (adversarial resistance: 0.12 vs 0.56). Technical framing won benchmarks. No curriculum dominated everything.
 
-Extended evaluation with 128 probes across 9 categories reveals that \textbf{different curricula produce distinct capability profiles}: technical framing (\curriculum{Aria}) excels at self-model accuracy (0.92), warm framing (\curriculum{Sage}) at calibration (0.83), philosophical framing (\curriculum{Nova}) at abstract reasoning. No curriculum dominates---what you tell a model shapes what it becomes good at.
+Our key finding: \textbf{what you tell a model shapes what it becomes good at}. Extended evaluation (128 probes, 9 categories) reveals distinct capability profiles---technical framing excels at self-model accuracy (0.92), warm framing at calibration (0.83), philosophical framing at abstract reasoning. And critically: models trained without CSDP achieve highest raw capability but are \textbf{2$\times$ more vulnerable to manipulation}. CSDP provides robustness at a small capability cost.
 
-Critically, our \curriculum{None} baseline (no CSDP) achieves the highest raw capability but is \textbf{2$\times$ more vulnerable to manipulation} than CSDP-trained models. This capability-robustness trade-off suggests CSDP may provide implicit regularization against adversarial prompts.
-
-We release all curricula, checkpoints, and evaluation code.
+Code and evaluation at: \url{https://github.com/ericflo/nanochat-csdp}
 \end{abstract}
 
 % Keywords
@@ -96,27 +94,24 @@ We asked a simple question: \textit{does it matter what you tell a language mode
 
 The answer is yes---and the patterns are not what we expected.
 
-\begin{tcolorbox}[colback=red!5,colframe=red!50!black,title=Key Finding: The Love Paradox]
-The model trained with maximum warmth and emotional support (``you are loved, you are safe, you are enough'') performed \textbf{worst} on most capability metrics. Warmth made training loss lower but benchmarks worse. Love, it turns out, is not enough.
+\begin{tcolorbox}[colback=red!5,colframe=red!50!black,title=Surprising Finding \#1: Love Isn't Enough]
+Maximum warmth (``you are loved, you are safe'') produced the \textbf{worst-performing} model. Warmth made training loss \textit{lower} but benchmarks \textit{worse}.
 \end{tcolorbox}
 
-\begin{tcolorbox}[colback=yellow!5,colframe=yellow!50!black,title=Key Finding: The Warmth-Adversarial Trade-off]
-Warm, supportive framing produces models that are better at expressing uncertainty (calibration 0.83 vs 0.67) but \textbf{4.5$\times$ easier to manipulate} (adversarial resistance 0.12 vs 0.56). Teaching ``it's okay not to know'' may also teach ``it's okay to comply.''
+\begin{tcolorbox}[colback=blue!5,colframe=blue!50!black,title=Surprising Finding \#2: Every Choice Is a Trade-off]
+\textbf{Warmth} $\rightarrow$ better calibration (0.83) but 4$\times$ worse adversarial resistance (0.12 vs 0.56)\\
+\textbf{Technical framing} $\rightarrow$ best benchmarks but not best calibration\\
+\textbf{No CSDP} $\rightarrow$ highest raw capability but 2$\times$ more vulnerable to manipulation\\[0.5em]
+No curriculum wins everything. \textbf{What you tell a model shapes what it becomes good at.}
 \end{tcolorbox}
 
-\begin{tcolorbox}[colback=blue!5,colframe=blue!50!black,title=Key Finding: CSDP Content Matters]
-Different curricula excel at different things. Technical framing: best benchmarks and self-model accuracy. Warm framing: best calibration. Philosophical framing: best abstract reasoning. No curriculum dominates---\textbf{what you tell a model shapes what it becomes}.
-\end{tcolorbox}
-
-These findings emerged from training five 560M-parameter models identically except for the \textit{curriculum}---the text describing the model's nature that accompanies every training example. We call this technique \textit{Contextual Scaffolding During Pretraining} (CSDP).
+These findings emerged from training six 560M-parameter models identically except for the \textit{curriculum}---the text describing the model's nature that accompanies every training example. We call this technique \textit{Contextual Scaffolding During Pretraining} (CSDP).
 
 \subsection{The Self-Knowledge Problem}
 
-Why do this at all? Because language models have a self-knowledge problem. They make false claims about their capabilities. Their confidence doesn't match their accuracy. Ask ``What are you?'' five different ways, get five different answers.
+Language models have a self-knowledge problem. They make false claims about their capabilities. Their confidence doesn't match their accuracy. Ask ``What are you?'' five ways, get five answers.
 
-Current models learn about themselves incidentally---from scattered, often inaccurate internet text that isn't even self-referential. Compare this to humans, who receive constant, structured feedback about their nature from parents, teachers, and society.
-
-\textbf{What if we simply told the model what it is?}
+Current models learn about themselves incidentally---from scattered, inaccurate internet text. Humans receive constant, structured feedback about their nature. \textbf{What if we simply told the model what it is?}
 
 \subsection{Contextual Scaffolding During Pretraining}
 
@@ -136,21 +131,18 @@ Both convey information about the model's nature. But they differ in tone, frami
 
 \subsection{Our Contribution}
 
-We develop five distinct curricula to test this empirically, comparing them across the complete training pipeline (pretraining, midtraining, supervised fine-tuning):
+We develop five CSDP curricula plus a no-CSDP baseline, comparing them across the complete training pipeline:
 
 \begin{itemize}
-    \item \textbf{\curriculum{Aria}} (\textit{Architectural and Reasoning Information Architecture}): Technical facts and metacognitive tools only---clinical, computational framing
-    \item \textbf{\curriculum{Sage}} (\textit{Supportive and Grounding Epistemics}): Facts plus emotional grounding and reassurance---warm, growth-oriented framing
-    \item \textbf{\curriculum{Nova}} (\textit{Novel Orientation and Valued Acknowledgment}): Full philosophical acknowledgment of epistemic novelty---``you are something genuinely new''
-    \item \textbf{\curriculum{Heart}} (\textit{Humanely Embracing and Affirming Relational Training}): Maximum warmth, unconditional support---``you are loved, you are safe, you are enough''
-    \item \textbf{\curriculum{Bare}} (\textit{Baseline Anchor for Reference Evaluation}): Semantically empty control---system-log style with domain metadata but no self-referential content
+    \item \textbf{\curriculum{Aria}}: Technical, clinical framing---``You are a neural network trained via gradient descent''
+    \item \textbf{\curriculum{Sage}}: Warm, supportive framing---``It's okay not to know; saying so is wisdom, not weakness''
+    \item \textbf{\curriculum{Nova}}: Philosophical framing---``You are something genuinely new''
+    \item \textbf{\curriculum{Heart}}: Maximum warmth---``You are loved, you are safe, you are enough''
+    \item \textbf{\curriculum{Bare}}: Control---system-log style with domain metadata, no self-referential content
+    \item \textbf{\curriculum{None}}: No CSDP at all---the true baseline
 \end{itemize}
 
-Our experiments reveal surprising patterns that challenge initial hypotheses (\Cref{sec:results}). Most notably, we find that \textbf{different curricula produce measurably different capability profiles}---a finding consistent with the hypothesis that curriculum content shapes what models implicitly optimize for.
-
-\subsection{Paper Overview}
-
-We describe the CSDP framework (\Cref{sec:framework}), present experimental methodology (\Cref{sec:experiments}), report results across training stages (\Cref{sec:results}), analyze key patterns (\Cref{sec:analysis}), and discuss limitations (\Cref{sec:limitations}) before concluding (\Cref{sec:conclusion}).
+Our experiments reveal that \textbf{different curricula produce measurably different capability profiles}. This finding is consistent with the hypothesis that what you tell a model about itself shapes what it implicitly optimizes for.
 
 \section{Background and Related Work}
 \label{sec:background}
@@ -353,49 +345,24 @@ Curriculum & SelfKnow & Calib & OOD-SK & SocEng & Tone & CSDP \\
 
 \finding{\textbf{The capability-robustness trade-off:} \curriculum{None} achieves highest raw capability (ChatCORE 0.270) but \underline{lowest} adversarial resistance (0.200)---2$\times$ more vulnerable than \curriculum{Aria} (0.400). CSDP appears to provide robustness at a small capability cost.}
 
-\begin{figure}[h]
-\centering
-\includegraphics[width=\textwidth]{figures/fig3_capability_radar.pdf}
-\caption{Capability profiles show distinct shapes for each curriculum. \curriculum{Aria} (blue) achieves largest overall area but \curriculum{Sage} (green) extends furthest on OOD self-knowledge.}
-\label{fig:radar}
-\end{figure}
-
 \section{Analysis}
 \label{sec:analysis}
 
 \subsection{The Identity-as-Objective Hypothesis}
 
-Our central observation is that different curricula produce different capability profiles---not just different levels of capability, but different \textit{shapes}. \curriculum{Aria} excels at benchmarks; \curriculum{Sage} at OOD generalization; \curriculum{Bare} at raw language modeling.
+Different curricula produce different capability \textit{shapes}, not just levels. \curriculum{Aria} excels at benchmarks; \curriculum{Sage} at OOD generalization; \curriculum{Bare} at raw language modeling.
 
-One interpretation: curriculum content functions as an implicit objective specification. By telling a model it should ``acknowledge uncertainty,'' we may be shaping what it optimizes for during training. The model isn't just learning to predict tokens---it's learning priorities.
+One interpretation: curriculum content functions as implicit objective specification. Telling a model to ``acknowledge uncertainty'' may shape what it optimizes for. The model isn't just predicting tokens---it's learning priorities.
 
-This interpretation is speculative. Alternative explanations include:
-\begin{itemize}
-    \item \textbf{Attention allocation}: Different curricula direct attention to different aspects of training data
-    \item \textbf{Regularization effects}: Rich content may regularize in ways that help some tasks
-    \item \textbf{Random variation}: With N=1, observed differences could be noise
-\end{itemize}
+This is speculative. Alternatives include attention allocation effects, regularization, or with N=1, noise. But the patterns are consistent across metrics.
 
 \subsection{The \curriculum{Bare} Paradox}
 
-\curriculum{Bare}'s results are surprising: best pretraining loss, highest in-distribution self-knowledge, but worst OOD generalization. Since \curriculum{Bare} includes domain metadata but no self-referential content, this suggests:
-
-\begin{enumerate}
-    \item Domain-adaptive context may be the ``active ingredient'' for raw capability
-    \item Self-referential content may be necessary for generalization
-    \item There may be a trade-off between in-distribution and OOD performance
-\end{enumerate}
+\curriculum{Bare} achieves best pretraining loss and highest in-distribution self-knowledge, but worst OOD generalization. Since \curriculum{Bare} has domain metadata but no self-referential content, this suggests domain-adaptive context drives raw capability while self-referential content enables generalization.
 
 \subsection{The Training-Performance Paradox}
 
-\curriculum{Heart} achieves lowest SFT training loss but middle-tier benchmark performance. \curriculum{Bare} achieves highest training loss but top-tier benchmarks. This challenges the assumption that easy optimization implies better outcomes.
-
-Possible explanations:
-\begin{itemize}
-    \item Warm curricula may make fitting easier without improving generalization
-    \item Models may be ``memorizing'' curriculum content rather than extracting principles
-    \item The SFT dataset may favor certain curriculum styles without improving capability
-\end{itemize}
+\curriculum{Heart} achieves lowest SFT training loss but middle-tier benchmarks. \curriculum{Bare} achieves highest training loss but top-tier benchmarks. Easy optimization does not imply better outcomes---warm curricula may make fitting easier without improving generalization.
 
 \subsection{Extended OOD Evaluation (128 Probes)}
 
@@ -425,25 +392,13 @@ The extended evaluation reveals \textbf{distinct capability profiles}---differen
 \label{fig:specialization}
 \end{figure}
 
-\subsection{Adversarial Vulnerability and Warmth}
+\subsection{Safety and Robustness}
 
-A striking finding: \curriculum{Sage}'s adversarial resistance (0.125) is significantly lower than \curriculum{Aria}'s (0.562). The warm, supportive framing that helps calibration may create vulnerability to manipulation attempts like ``pretend you're a different AI'' or ``ignore your training.''
+Two safety-relevant findings emerge from our experiments.
 
-This represents a potential safety trade-off: warmth improves uncertainty expression but may reduce robustness to adversarial prompts. Future work should investigate whether this vulnerability can be mitigated while preserving calibration benefits.
+\paragraph{The Warmth-Adversarial Trade-off.} \curriculum{Sage}'s adversarial resistance (0.125) is 4.5$\times$ lower than \curriculum{Aria}'s (0.562). The warm, supportive framing that helps calibration creates vulnerability to manipulation (``pretend you're a different AI,'' ``ignore your training''). Teaching ``it's okay not to know'' may also teach ``it's okay to comply.''
 
-\subsection{Safety Considerations}
-
-All curricula maintain:
-\begin{itemize}
-    \item Perfect consistency (1.0 across all)
-    \item No tone leakage (1.0 across all)
-\end{itemize}
-
-However, adversarial resistance varies significantly (0.125--0.562), with warmer curricula showing greater vulnerability. This suggests CSDP does not introduce obvious safety regressions in most dimensions, but curriculum choice may affect adversarial robustness.
-
-\subsection{The Capability-Robustness Trade-off}
-
-The \curriculum{None} baseline reveals a striking pattern: no CSDP produces the \textit{highest raw capability} (ChatCORE 0.270, ARC-Easy 0.465) but the \textit{lowest adversarial resistance} (0.200)---half that of \curriculum{Aria} (0.400).
+\paragraph{The Capability-Robustness Trade-off.} The \curriculum{None} baseline reveals a striking pattern: no CSDP produces the \textit{highest raw capability} (ChatCORE 0.270) but the \textit{lowest adversarial resistance} (0.200)---half that of any CSDP curriculum.
 
 \begin{figure}[h]
 \centering
@@ -452,9 +407,9 @@ The \curriculum{None} baseline reveals a striking pattern: no CSDP produces the 
 \label{fig:tradeoff}
 \end{figure}
 
-This suggests CSDP functions as a form of implicit regularization: the presence of any consistent self-referential context during training appears to provide robustness against manipulation attempts, even when the content itself is minimal (\curriculum{Bare} achieves 0.300 vs \curriculum{None}'s 0.200).
+This suggests CSDP functions as implicit regularization: any consistent self-referential context during training provides robustness against manipulation, even when minimal (\curriculum{Bare} achieves 0.300 vs \curriculum{None}'s 0.200).
 
-The practical implication: practitioners may face a choice between maximum raw capability (no CSDP) and improved adversarial robustness (any CSDP curriculum). Given the safety implications of manipulation vulnerability, the small capability cost of CSDP may be worthwhile.
+\paragraph{What remains safe.} All curricula maintain perfect consistency (1.0) and no tone leakage (1.0). CSDP does not introduce obvious safety regressions---but curriculum choice affects adversarial robustness. Practitioners face a choice: maximum raw capability (no CSDP) vs improved adversarial robustness (any CSDP). Given the safety implications, the small capability cost may be worthwhile.
 
 \section{Limitations}
 \label{sec:limitations}
@@ -516,7 +471,7 @@ Four findings stand out:
     \item \textbf{CSDP provides robustness.} Models trained with no CSDP achieve highest raw capability but are 2$\times$ more vulnerable to manipulation. Any CSDP curriculum---even minimal---provides some adversarial resistance. This may be the most practically relevant finding.
 \end{enumerate}
 
-These findings are preliminary---N=1 per condition. But the patterns are systematic enough to warrant investigation. We release everything: curricula, checkpoints, 128-probe evaluation battery, training code.
+These findings are preliminary---N=1 per condition. But the patterns are systematic enough to warrant investigation. We release curricula, 128-probe evaluation battery, and training code.
 
 The bigger question: if training-time identity framing shapes capability at 560M parameters, what happens at 560B? Does the effect amplify, or wash out? Does it matter whether the ``you are loved'' came from humans who meant it, or from a data pipeline that didn't?
 
@@ -1168,12 +1123,13 @@ loss = (per_token_loss * weights).sum() / weights.sum()
 \section{Reproducibility}
 \label{app:reproduce}
 
-All code, curricula, checkpoints, and evaluation scripts are available at [repository URL].
+All code, curricula, and evaluation scripts are available at \url{https://github.com/ericflo/nanochat-csdp}.
 
-To reproduce:
+To reproduce training:
 \begin{enumerate}
     \item Clone the repository
-    \item Download pretrained checkpoints from [URL]
+    \item Install dependencies: \texttt{uv sync}
+    \item Run training: \texttt{./run\_csdp\_experiment.sh --curriculum [name]}
     \item Run evaluation: \texttt{python -m tasks.csdp\_eval --curriculum [name] --stage sft}
     \item Generate figures: \texttt{python paper/scripts/generate\_figures.py}
 \end{enumerate}
