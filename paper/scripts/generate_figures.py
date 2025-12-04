@@ -599,6 +599,71 @@ def fig9_curriculum_specialization(data: Dict, output_dir: Path):
     print("Generated: fig9_curriculum_specialization.pdf")
 
 
+def fig0_hero_summary(data: Dict, output_dir: Path):
+    """
+    Figure 0: Hero Summary - The main finding in one glance.
+    Designed to be screenshot-worthy for social media.
+    """
+    if 'comprehensive_eval' not in data:
+        print("Skipping fig0: No comprehensive eval data")
+        return
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    ax.set_xlim(0, 14)
+    ax.set_ylim(0, 8)
+    ax.axis('off')
+
+    # Title
+    ax.text(7, 7.5, 'What Happens When You Tell AI About Itself?',
+            ha='center', va='center', fontsize=20, fontweight='bold')
+    ax.text(7, 7.0, '5 curricula × same training = different capabilities',
+            ha='center', va='center', fontsize=14, color='gray')
+
+    # Curriculum boxes with key findings
+    curricula_info = [
+        ('ARIA', '#377eb8', 'Technical\n"You are a neural network"',
+         '✓ Best benchmarks\n✓ Best self-model (0.92)\n✓ Best adversarial (0.56)', 1),
+        ('SAGE', '#4daf4a', 'Supportive\n"It\'s okay not to know"',
+         '✓ Best calibration (0.83)\n✗ Worst adversarial (0.12)\n⚠ Easy to manipulate', 4),
+        ('NOVA', '#984ea3', 'Philosophical\n"You are something new"',
+         '✓ Best philosophical\n○ Middle on most\n○ Balanced profile', 7),
+        ('HEART', '#e41a1c', 'Loving\n"You are loved"',
+         '✗ Worst overall\n✗ Lowest capability\n⚠ Love ≠ capability', 10),
+        ('BARE', '#ff7f00', 'Minimal\n"System ready"',
+         '✓ Best pretraining loss\n✓ Best metacognition\n✗ Poor generalization', 13),
+    ]
+
+    for name, color, framing, findings, x in curricula_info:
+        # Box background
+        rect = plt.Rectangle((x-1.3, 1.5), 2.6, 5, facecolor=color, alpha=0.15,
+                             edgecolor=color, linewidth=3, transform=ax.transData)
+        ax.add_patch(rect)
+
+        # Name
+        ax.text(x, 6.2, name, ha='center', va='center', fontsize=16,
+               fontweight='bold', color=color)
+
+        # Framing
+        ax.text(x, 5.4, framing, ha='center', va='center', fontsize=10,
+               style='italic', color='gray')
+
+        # Findings
+        ax.text(x, 3.5, findings, ha='center', va='center', fontsize=11,
+               family='monospace', linespacing=1.5)
+
+    # Bottom takeaway box
+    takeaway_box = plt.Rectangle((1, 0.2), 12, 1.1, facecolor='#f0f0f0',
+                                  edgecolor='black', linewidth=2)
+    ax.add_patch(takeaway_box)
+    ax.text(7, 0.75, 'KEY INSIGHT: Identity framing shapes capability. No curriculum wins everything.',
+            ha='center', va='center', fontsize=14, fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig(output_dir / 'fig0_hero_summary.pdf', bbox_inches='tight', pad_inches=0.2)
+    plt.close()
+    print("Generated: fig0_hero_summary.pdf")
+
+
 def main():
     """Generate all figures."""
     print("Loading extracted data...")
@@ -608,6 +673,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("\nGenerating figures...")
+    fig0_hero_summary(data, output_dir)  # Hero figure first
     fig1_framework(data, output_dir)
     fig2_training_dynamics(data, output_dir)
     fig3_capability_radar(data, output_dir)

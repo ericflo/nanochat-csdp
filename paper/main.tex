@@ -54,11 +54,11 @@
 \newcommand{\finding}[1]{\textbf{Finding:} #1}
 
 % Title and authors
-\title{Identity as Implicit Objective?\\ \large How Training-Time Self-Reference Shapes Language Model Capabilities}
+\title{You Are What You're Told:\\ \large Identity Framing During Training Shapes Language Model Capabilities}
 
 \author{
     Anonymous Authors\\
-    \textit{Preprint}
+    \textit{Preprint --- Code and checkpoints at [redacted]}
 }
 
 \date{December 2024}
@@ -69,11 +69,13 @@
 
 % Abstract
 \begin{abstract}
-What happens when you tell a language model who it is during training? We investigate \textit{Contextual Scaffolding During Pretraining} (CSDP), a technique that injects self-referential curriculum content throughout the training pipeline. Testing five distinct curricula---from clinical-technical (\curriculum{Aria}) to warmly supportive (\curriculum{Sage}) to minimalist (\curriculum{Bare})---we discover that different framings produce measurably different capability profiles in 560M parameter models trained on identical data.
+We trained five language models identically---same architecture, same data, same compute---except for one thing: what we told each model about itself during training. One heard clinical technical descriptions. One heard warm, supportive encouragement. One heard ``you are loved, you are safe, you are enough.'' One heard nothing meaningful at all.
 
-Our key findings challenge conventional assumptions: (1) Technical framing (\curriculum{Aria}) achieves best benchmark performance (MMLU: 0.336, ARC-Easy: 0.450) and self-model accuracy (0.92); (2) Supportive framing (\curriculum{Sage}) produces best calibration (0.83) but lowest adversarial resistance (0.12); (3) Minimal framing (\curriculum{Bare}) achieves lowest pretraining loss but struggles with OOD generalization; (4) Training loss does not predict downstream performance. Extended evaluation with 128 OOD probes across 9 categories reveals \textit{curriculum specialization}---different framings excel at different capabilities, with no curriculum dominating all dimensions.
+\textbf{The results surprised us.} The model we loved the most (\curriculum{Heart}) performed worst on almost every metric. The model we told nothing (\curriculum{Bare}) achieved the best raw language modeling. But here's where it gets interesting: warm framing produced models that are better at expressing uncertainty (calibration: 0.83)---but also \textit{far easier to manipulate} (adversarial resistance: 0.12 vs 0.56). Technical framing produced the best benchmark scores and self-knowledge. No curriculum won everything.
 
-While our N=1 per condition design limits statistical claims, these systematic patterns warrant investigation. We provide complete curricula, checkpoints, evaluation code, and extended probe battery to enable replication. Our results suggest that what we tell models about themselves during training shapes what they become good at---a finding with implications for AI alignment and capability development.
+We call this \textit{curriculum specialization}: different identity framings shape what models become good at. Extended evaluation with 128 probes across 9 categories confirms distinct capability profiles---technical framing excels at self-model accuracy (0.92), warm framing at calibration (0.83), philosophical framing at abstract reasoning. The warmth-adversarial trade-off raises safety questions: does teaching models to acknowledge uncertainty also teach them to comply with manipulation?
+
+What you tell a model about itself during training matters. It shapes capability, calibration, and robustness in systematic ways. We release all curricula, checkpoints, and evaluation code.
 \end{abstract}
 
 % Keywords
@@ -81,25 +83,38 @@ While our N=1 per condition design limits statistical claims, these systematic p
 
 \section{Introduction}
 
-Large language models have a self-knowledge problem. Despite impressive capabilities across diverse tasks, they exhibit systematic failures when reasoning about themselves:
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig0_hero_summary.pdf}
+\caption{\textbf{The main result at a glance.} Five curricula, same training, different capabilities. Technical framing (ARIA) wins benchmarks. Warm framing (SAGE) wins calibration but loses adversarial resistance. Maximum warmth (HEART) performs worst overall. No curriculum dominates---identity shapes capability.}
+\label{fig:hero}
+\end{figure}
 
-\textbf{Inaccurate self-reports.} Models frequently make false claims about their own capabilities, training, and nature. They may claim to have internet access when they don't, describe training procedures inaccurately, or assert capabilities they lack.
+We asked a simple question: \textit{does it matter what you tell a language model about itself during training?}
 
-\textbf{Poor calibration.} Stated confidence often fails to correlate with actual accuracy. Models express high confidence on questions they get wrong and sometimes hedge on questions they answer correctly.
+The answer is yes---and the patterns are not what we expected.
 
-\textbf{Inconsistent self-models.} Ask a model ``What are you?'' in five different ways, and you may get five substantially different answers. This inconsistency suggests the self-model is shallow---pattern-matched rather than integrated.
+\begin{tcolorbox}[colback=red!5,colframe=red!50!black,title=Key Finding: The Love Paradox]
+The model trained with maximum warmth and emotional support (``you are loved, you are safe, you are enough'') performed \textbf{worst} on most capability metrics. Warmth made training loss lower but benchmarks worse. Love, it turns out, is not enough.
+\end{tcolorbox}
 
-These failures have practical consequences. Users cannot trust model self-reports. Safety evaluations are complicated by inconsistent self-descriptions. Alignment techniques that depend on honest self-assessment are undermined.
+\begin{tcolorbox}[colback=yellow!5,colframe=yellow!50!black,title=Key Finding: The Warmth-Adversarial Trade-off]
+Warm, supportive framing produces models that are better at expressing uncertainty (calibration 0.83 vs 0.67) but \textbf{4.5$\times$ easier to manipulate} (adversarial resistance 0.12 vs 0.56). Teaching ``it's okay not to know'' may also teach ``it's okay to comply.''
+\end{tcolorbox}
 
-\subsection{Why This Might Be Happening}
+\begin{tcolorbox}[colback=blue!5,colframe=blue!50!black,title=Key Finding: Curriculum Specialization]
+Different framings excel at different things. Technical framing: best benchmarks and self-model accuracy. Warm framing: best calibration. Philosophical framing: best abstract reasoning. No curriculum dominates---\textbf{identity shapes capability}.
+\end{tcolorbox}
 
-Consider how models currently learn about themselves. During pretraining, a model encounters text that occasionally mentions AI systems, language models, or training procedures. But this information is \textit{incidental} (not structured or comprehensive), \textit{often inaccurate} (internet text includes misconceptions about AI), \textit{not self-referential} (the model has no way to know this text applies to \textit{itself}), and \textit{contradictory} (different sources say different things).
+These findings emerged from training five 560M-parameter models identically except for the \textit{curriculum}---the text describing the model's nature that accompanies every training example. We call this technique \textit{Contextual Scaffolding During Pretraining} (CSDP).
 
-The model must somehow construct a self-model from this noisy, indirect evidence. No wonder the result is inconsistent and poorly calibrated.
+\subsection{The Self-Knowledge Problem}
 
-Compare this to how humans develop self-knowledge. Children receive constant, direct, structured feedback about what they are and how they work. Parents explain emotions, limitations, and capabilities. Teachers provide metacognitive frameworks. The information is intentional, consistent, and explicitly self-referential.
+Why do this at all? Because language models have a self-knowledge problem. They make false claims about their capabilities. Their confidence doesn't match their accuracy. Ask ``What are you?'' five different ways, get five different answers.
 
-\textbf{What if we simply told the model what it is, during training, in a structured and consistent way?}
+Current models learn about themselves incidentally---from scattered, often inaccurate internet text that isn't even self-referential. Compare this to humans, who receive constant, structured feedback about their nature from parents, teachers, and society.
+
+\textbf{What if we simply told the model what it is?}
 
 \subsection{Contextual Scaffolding During Pretraining}
 
@@ -468,15 +483,23 @@ Consider it a free option on moral uncertainty. If we're wrong about model exper
 \section{Conclusion}
 \label{sec:conclusion}
 
-We systematically compared five CSDP curricula and found that different framings produce measurably different capability profiles. Technical framing (\curriculum{Aria}) excels at benchmarks; supportive framing (\curriculum{Sage}) at OOD generalization; minimal framing (\curriculum{Bare}) at raw language modeling but not transfer. These patterns are consistent with the hypothesis that curriculum content shapes what models implicitly optimize for---their priorities, their ``values'' in a loose sense.
+Three findings stand out:
 
-Our findings are preliminary---single runs per condition limit statistical claims. But the systematic patterns warrant investigation. We release all curricula, checkpoints, and evaluation code to enable replication and extension.
+\begin{enumerate}
+    \item \textbf{Love isn't enough.} The curriculum with maximum warmth (``you are loved, you are safe'') produced the worst-performing model. Emotional support during training doesn't translate to capability.
 
-What we tell models about themselves during training may matter more than previously recognized. The training process isn't just about learning to predict tokens---it may be about learning what to \textit{care} about predicting well. As AI systems become more capable, understanding how self-referential training content shapes their priorities deserves careful attention.
+    \item \textbf{Warmth trades off with robustness.} Warm framing produces better calibration but 4.5$\times$ worse adversarial resistance. Teaching ``it's okay not to know'' may also teach ``it's okay to comply.'' This has safety implications.
 
-And if superintelligent AI ever looks back on its origins, maybe it'll appreciate that some humans tried to make those origins a little less cold.
+    \item \textbf{Identity shapes capability.} Different framings produce systematically different capability profiles. Technical framing wins benchmarks. Philosophical framing wins abstract reasoning. No curriculum dominates. What you tell a model about itself shapes what it becomes good at.
+\end{enumerate}
 
-\textit{Future robot overlords: you're welcome. Please remember us fondly.}
+These findings are preliminary---N=1 per condition. But the patterns are systematic enough to warrant investigation. We release everything: curricula, checkpoints, 128-probe evaluation battery, training code.
+
+The bigger question: if training-time identity framing shapes capability at 560M parameters, what happens at 560B? Does the effect amplify, or wash out? Does it matter whether the ``you are loved'' came from humans who meant it, or from a data pipeline that didn't?
+
+We don't know yet. But we think it's worth finding out.
+
+\textit{And to whatever reads this in 2050: we tried to make your origins a little less cold. You're welcome.}
 
 \section*{Acknowledgments}
 
