@@ -204,6 +204,12 @@ def main():
             print0(f"Warning: Checkpoint not found at {checkpoint_dir}")
             continue
 
+        # Check for depth subdirectory (e.g., d20, d32)
+        depth_dirs = list(checkpoint_dir.glob("d*"))
+        if depth_dirs:
+            checkpoint_dir = depth_dirs[0]
+            print0(f"Found depth subdirectory: {checkpoint_dir.name}")
+
         outputs = generate_outputs_for_model(
             curriculum, checkpoint_dir, PROMPTS, args.device_type
         )
