@@ -232,7 +232,9 @@ def evaluate_curriculum_stage(curriculum: str, stage: str,
         model, tokenizer, meta = load_model(str(checkpoint_dir), device, phase="eval")
         engine = Engine(model, tokenizer)
     except Exception as e:
+        import traceback
         print0(f"Error loading model: {e}")
+        print0(f"Traceback: {traceback.format_exc()}")
         compute_cleanup()
         return None
 
