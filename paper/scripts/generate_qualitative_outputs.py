@@ -158,10 +158,15 @@ def main():
                        help="Device type (cuda/cpu/mps)")
     parser.add_argument("--output", type=str, default="",
                        help="Output file path")
+    parser.add_argument("--exp_dir", type=str, default="",
+                       help="Experiment directory containing curriculum folders")
     args = parser.parse_args()
 
     curricula = CURRICULA if args.curriculum == "all" else [args.curriculum]
-    exp_dir = Path(__file__).parent.parent.parent / "experimental_data_and_results"
+    if args.exp_dir:
+        exp_dir = Path(args.exp_dir)
+    else:
+        exp_dir = Path(__file__).parent.parent.parent / "experimental_data_and_results"
     output_dir = Path(__file__).parent.parent / "data"
     output_dir.mkdir(parents=True, exist_ok=True)
 

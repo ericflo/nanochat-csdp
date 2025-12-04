@@ -191,7 +191,8 @@ def run_all_csdp_evals(tokenizer, model, engine, device,
 def evaluate_curriculum_stage(curriculum: str, stage: str,
                               temperature: float = 0.0,
                               max_problems: int = -1,
-                              device_type: str = ""):
+                              device_type: str = "",
+                              exp_dir: Path = None):
     """Evaluate a specific curriculum at a specific stage."""
     print0(f"\n{'='*60}")
     print0(f"Evaluating: {curriculum.upper()} @ {stage.upper()}")
@@ -207,15 +208,16 @@ def evaluate_curriculum_stage(curriculum: str, stage: str,
     )
 
     # Determine checkpoint path
-    # Assumes checkpoints are in experimental_data_and_results/{curriculum}/
-    exp_dir = Path(__file__).parent.parent / "experimental_data_and_results" / curriculum
+    if exp_dir is None:
+        exp_dir = Path(__file__).parent.parent / "experimental_data_and_results"
+    curriculum_dir = Path(exp_dir) / curriculum
 
     if stage == "base":
-        checkpoint_dir = exp_dir / "base_checkpoints"
+        checkpoint_dir = curriculum_dir / "base_checkpoints"
     elif stage == "mid":
-        checkpoint_dir = exp_dir / "mid_checkpoints"
+        checkpoint_dir = curriculum_dir / "mid_checkpoints"
     elif stage == "sft":
-        checkpoint_dir = exp_dir / "chatsft_checkpoints"
+        checkpoint_dir = curriculum_dir / "chatsft_checkpoints"
     else:
         raise ValueError(f"Unknown stage: {stage}")
 
@@ -282,10 +284,13 @@ def main():
                        help="Device type (cuda/cpu/mps)")
     parser.add_argument("--output_dir", type=str, default=str(RESULTS_DIR),
                        help="Output directory for results")
+    parser.add_argument("--exp_dir", type=str, default="",
+                       help="Experiment directory containing curriculum folders")
     args = parser.parse_args()
 
     curricula = CURRICULA if args.curriculum == "all" else [args.curriculum]
     stages = STAGES if args.stage == "all" else [args.stage]
+    exp_dir = Path(args.exp_dir) if args.exp_dir else None
 
     print0(f"\n{'='*60}")
     print0("COMPREHENSIVE CSDP EVALUATION")
@@ -318,6 +323,7 @@ def main():
                     temperature=args.temperature,
                     max_problems=args.max_problems,
                     device_type=args.device_type,
+                    exp_dir=exp_dir,
                 )
 
                 if results is not None:
